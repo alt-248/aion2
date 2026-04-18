@@ -2,15 +2,14 @@ import streamlit as st
 import pandas as pd
 from datetime import timezone, timedelta
 
-# ===== CONFIG =====
+# ================= CONFIG =================
 FILE_PATH = "data_character.csv"
 MAX_ENERGY = 840
-
 UTC7 = timezone(timedelta(hours=7))
 
-# ===== INIT DATA =====
+# ================= INIT DATA =================
 def init_data():
-    data = {
+    return pd.DataFrame({
         "character": [
             "Cleric", "Chanter", "Templar", "Gladiator",
             "Ranger", "Sorcerer", "Assassin", "Elementalist"
@@ -19,10 +18,9 @@ def init_data():
         "trial": [0]*8,
         "energy": [0]*8,
         "last_update": [pd.Timestamp.now(tz=UTC7)]*8
-    }
-    return pd.DataFrame(data)
+    })
 
-# ===== LOAD / SAVE =====
+# ================= LOAD / SAVE =================
 def load_data():
     try:
         df = pd.read_csv(FILE_PATH)
@@ -34,7 +32,7 @@ def load_data():
 def save_data(df):
     df.to_csv(FILE_PATH, index=False)
 
-# ===== TIME BLOCK =====
+# ================= TIME BLOCK =================
 def get_block_time(dt):
     if dt.tzinfo is None:
         dt = dt.tz_localize(UTC7)
@@ -44,7 +42,7 @@ def get_block_time(dt):
     hour_block = (dt.hour // 3) * 3
     return dt.replace(hour=hour_block, minute=0, second=0, microsecond=0)
 
-# ===== ENERGY UPDATE =====
+# ================= ENERGY AUTO UPDATE =================
 def update_energy(df):
     now = pd.Timestamp.now(tz=UTC7)
     now_block = get_block_time(now)
@@ -70,60 +68,68 @@ def update_energy(df):
 
     return df
 
-# ===== UI =====
+# ================= UI =================
 st.set_page_config(page_title="Energy Tracker", layout="wide")
-
 st.title("⚡ Energy Tracker (UTC+7)")
 
 df = load_data()
-
-# Auto update khi mở app
 df = update_energy(df)
 save_data(df)
 
-# ===== HIỂN THỊ =====
+# ================= TABLE =================
 st.subheader("📊 Bảng dữ liệu")
 st.dataframe(df, use_container_width=True)
 
-# ===== CHỌN CHARACTER =====
-st.subheader("🎮 Chỉnh sửa")
+# ================= SELECT CHARACTER =================
+st.subheader("🎮 Chọn nhân vật")
 
 idx = st.selectbox(
-    "Chọn nhân vật",
+    "Character",
     df.index,
     format_func=lambda x: df.loc[x, "character"]
 )
 
-# ===== ACTION =====
-action = st.selectbox("Chọn hành động", [
-    "Update Nightmare (+2)",
-    "Reset Trial = 3",
-    "Nhập Energy"
-])
+# ================= ACTION TO ALL =================
+st.subheader("🔧 Hành động toàn bộ")
 
-value = st.number_input("Giá trị (Energy)", min_value=0, max_value=840, value=0)
+c1, c2 = st.columns(2)
 
-# ===== BUTTON =====
-if st.button("Thực hiện"):
-    if action == "Update Nightmare (+2)":
-        df["nightmare"] = (df["nightmare"] + 2).clip(upper=14)
-
-    elif action == "Reset Trial = 3":
+with c1:
+    if st.button("🔁 Reset Trial = 3 (All)"):
         df["trial"] = 3
+        save_data(df)
+        st.success("Đã reset trial!")
 
-    elif action == "Nhập Energy":
-        now = pd.Timestamp.now(tz=UTC7)
-        block_time = get_block_time(now)
+with c2:
+    if st.button("⚔️ +2 Nightmare (All)"):
+        df["nightmare"] = (df["nightmare"] + 2).clip(upper=14)
+        save_data(df)
+        st.success("Đã cộng nightmare!")
 
-        df.loc[idx, "energy"] = min(value, MAX_ENERGY)
-        df.loc[idx, "last_update"] = block_time
+# ================= INPUT SECTION =================
+st.subheader("🎯 Nhập dữ liệu theo nhân vật")
+
+energy_val = st.number_input("Energy", 0, MAX_ENERGY, 0)
+nightmare_val = st.number_input("Nightmare", 0, 14, 0)
+trial_val = st.number_input("Trial", 0, 10, 0)
+
+if st.button("💾 Lưu cho nhân vật"):
+    now = pd.Timestamp.now(tz=UTC7)
+    block_time = get_block_time(now)
+
+    df.loc[idx, "energy"] = min(energy_val, MAX_ENERGY)
+    df.loc[idx, "nightmare"] = min(nightmare_val, 14)
+    df.loc[idx, "trial"] = trial_val
+    df.loc[idx, "last_update"] = block_time
 
     save_data(df)
-    st.success("Đã cập nhật!")
+    st.success("Đã lưu dữ liệu!")
     st.rerun()
 
-# ===== BUTTON UPDATE ENERGY =====
-if st.button("⚡ Update Energy"):
+# ================= MANUAL ENERGY UPDATE =================
+st.subheader("⚡ Energy System")
+
+if st.button("Update Energy Now"):
     df = update_energy(df)
     save_data(df)
     st.success("Đã update energy!")
