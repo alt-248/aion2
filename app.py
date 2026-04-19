@@ -175,12 +175,14 @@ with c1:
         df["trial"] = 3
         save_data(df)
         st.success("Reset trial xong!")
+        st.rerun()
 
 with c2:
     if st.button("⚔️ +2 Nightmare (All)"):
         df["nightmare"] = (df["nightmare"] + 2).clip(upper=MAX_NIGHTMARE)
         save_data(df)
         st.success("Nightmare +2 xong!")
+        st.rerun()
 
 # ================= ENERGY MANUAL UPDATE =================
 st.subheader("⚡ Energy System")
