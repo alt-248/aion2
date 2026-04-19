@@ -94,10 +94,36 @@ if full_energy:
 
 if full_nightmare:
     st.error(f"💀 Full Nightmare: {', '.join(full_nightmare)}")
+    
+# ================= HIGHLIGHT =================
+def highlight_status(df):
+    def color_energy(val):
+        if val >= MAX_ENERGY:
+            return "background-color: red; color: white"
+        elif val >= MAX_ENERGY * 0.8:
+            return "background-color: yellow"
+        return ""
 
+    def color_nightmare(val):
+        if val >= MAX_NIGHTMARE:
+            return "background-color: red; color: white"
+        elif val >= MAX_NIGHTMARE * 0.8:
+            return "background-color: yellow"
+        return ""
+
+    style = pd.DataFrame("", index=df.index, columns=df.columns)
+
+    style["energy"] = df["energy"].apply(color_energy)
+    style["nightmare"] = df["nightmare"].apply(color_nightmare)
+
+    return style
+    
 # ================= TABLE =================
 st.subheader("📊 Bảng dữ liệu")
-st.dataframe(df, use_container_width=True)
+
+styled_df = df.style.apply(lambda x: highlight_status(df), axis=None)
+
+st.dataframe(styled_df, use_container_width=True)
 
 # ================= SELECT CHARACTER =================
 st.subheader("🎮 Chọn nhân vật")
