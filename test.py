@@ -100,34 +100,6 @@ def update_energy(df):
 
     return df
 
-# ================= COLOR =================
-def highlight_main(df):
-    style = pd.DataFrame("", index=df.index, columns=df.columns)
-
-    for i in df.index:
-        if df.loc[i,"energy"] >= MAX_ENERGY:
-            style.loc[i,"energy"] = "background:red;color:white"
-        elif df.loc[i,"energy"] >= MAX_ENERGY*0.8:
-            style.loc[i,"energy"] = "background:yellow"
-
-        if df.loc[i,"nightmare"] >= MAX_NIGHTMARE:
-            style.loc[i,"nightmare"] = "background:red;color:white"
-        elif df.loc[i,"nightmare"] >= MAX_NIGHTMARE*0.8:
-            style.loc[i,"nightmare"] = "background:yellow"
-
-    return style
-
-def color_full(val):
-    if val == "❌":
-        return "background:red;color:white"
-    elif isinstance(val,str) and "Lv" in val:
-        lv = int(val.split("Lv")[-1].replace(")",""))
-        if lv < 5:
-            return "background:yellow"
-        else:
-            return "background:lightgreen"
-    return ""
-
 # ================= UI =================
 st.set_page_config(layout="wide")
 st.title("⚡ Tracker PRO")
@@ -136,15 +108,18 @@ df = load_data()
 df = update_energy(df)
 save_data(df)
 
-# ===== MAIN TABLE (KHÔNG last_update) =====
+# ===== MAIN TABLE =====
 st.subheader("📊 Energy")
 
 main_cols = ["character","nightmare","trial","energy"]
+st.dataframe(df[main_cols], use_container_width=True)
 
-st.dataframe(
-    df[main_cols].style.apply(lambda x: highlight_main(df), axis=None),
-    use_container_width=True
-)
+# ===== WARNING =====
+for i in df.index:
+    if df.loc[i,"energy"] >= MAX_ENERGY:
+        st.error(f"{df.loc[i,'character']} FULL ENERGY!")
+    elif df.loc[i,"energy"] >= MAX_ENERGY*0.8:
+        st.warning(f"{df.loc[i,'character']} gần full energy!")
 
 # ===== SELECT =====
 idx = st.selectbox("Chọn nhân vật", df.index, format_func=lambda x: df.loc[x,"character"])
@@ -248,4 +223,4 @@ for i in df.index:
 
 full_df = pd.DataFrame(rows).set_index("character")
 
-st.dataframe(full_df.style.map(color_full), use_container_width=True)
+st.dataframe(full_df, use_container_width=True)
