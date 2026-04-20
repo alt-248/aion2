@@ -31,13 +31,15 @@ gear_slots = [
 def init_data():
     data = {
         "character": [
-            "Cleric", "Chanter", "Templar", "Gladiator",
-            "Ranger", "Sorcerer", "Assassin", "Elementalist"
+            "Cleric","Chanter","Templar","Gladiator",
+            "Ranger","Sorcerer","Assassin","Elementalist"
         ],
         "nightmare": [0]*8,
         "trial": [0]*8,
         "energy": [0]*8,
-        "last_update": [pd.Timestamp.now(tz=UTC7)]*8
+        "last_update": [pd.Timestamp.now(tz=UTC7)]*8,
+        "power": [0]*8,
+        "dps": [0]*8
     }
 
     for key, _ in gear_slots:
@@ -96,49 +98,47 @@ def update_energy(df):
 
 # ================= GEAR SCORE =================
 def calc_gear_score(df):
-    scores = []
-    for i in df.index:
-        total = 0
-        for key, _ in gear_slots:
-            total += df.loc[i, f"{key}_level"]
-        scores.append(total)
-    df["gear_score"] = scores
+    df["gear_score"] = [
+        sum(df.loc[i, f"{k}_level"] for k,_ in gear_slots)
+        for i in df.index
+    ]
     return df
 
 # ================= SUGGEST =================
 def suggest_upgrade(df, idx):
-    suggestions = []
-    for key, label in gear_slots:
-        name = df.loc[idx, f"{key}_name"]
-        level = df.loc[idx, f"{key}_level"]
-
-        if name == "" or level == 0:
-            suggestions.append(f"🔴 Thiếu {label}")
-        elif level < 5:
-            suggestions.append(f"🟡 {label} yếu (Lv {level})")
-    return suggestions
+    out = []
+    for k, label in gear_slots:
+        name = df.loc[idx, f"{k}_name"]
+        lv = df.loc[idx, f"{k}_level"]
+        if name == "" or lv == 0:
+            out.append(f"🔴 Thiếu {label}")
+        elif lv < 5:
+            out.append(f"🟡 {label} yếu (Lv {lv})")
+    return out
 
 # ================= COLOR =================
 def highlight_status(df):
     style = pd.DataFrame("", index=df.index, columns=df.columns)
 
     for i in df.index:
-        if df.loc[i, "energy"] >= MAX_ENERGY:
-            style.loc[i, "energy"] = "background-color:red;color:white"
-        elif df.loc[i, "energy"] >= MAX_ENERGY * 0.8:
-            style.loc[i, "energy"] = "background-color:yellow"
+        # energy
+        if df.loc[i,"energy"] >= MAX_ENERGY:
+            style.loc[i,"energy"] = "background-color:red;color:white"
+        elif df.loc[i,"energy"] >= MAX_ENERGY*0.8:
+            style.loc[i,"energy"] = "background-color:yellow"
 
-        if df.loc[i, "nightmare"] >= MAX_NIGHTMARE:
-            style.loc[i, "nightmare"] = "background-color:red;color:white"
-        elif df.loc[i, "nightmare"] >= MAX_NIGHTMARE * 0.8:
-            style.loc[i, "nightmare"] = "background-color:yellow"
+        # nightmare
+        if df.loc[i,"nightmare"] >= MAX_NIGHTMARE:
+            style.loc[i,"nightmare"] = "background-color:red;color:white"
+        elif df.loc[i,"nightmare"] >= MAX_NIGHTMARE*0.8:
+            style.loc[i,"nightmare"] = "background-color:yellow"
 
     return style
 
-def gear_color(name, level):
-    if name == "" or level == 0:
+def gear_color(name, lv):
+    if name == "" or lv == 0:
         return "background-color:red;color:white"
-    elif level < 5:
+    elif lv < 5:
         return "background-color:yellow"
     else:
         return "background-color:lightgreen"
@@ -161,75 +161,77 @@ top = df.sort_values("gear_score", ascending=False).iloc[0]
 st.success(f"🏆 Mạnh nhất: {top['character']} ({top['gear_score']})")
 
 # ===== SELECT =====
-idx = st.selectbox("Chọn nhân vật", df.index, format_func=lambda x: df.loc[x, "character"])
+idx = st.selectbox("Chọn nhân vật", df.index, format_func=lambda x: df.loc[x,"character"])
 
-# ===== SCORE =====
-st.metric("Gear Score", df.loc[idx, "gear_score"])
+# ===== METRIC =====
+col1, col2, col3 = st.columns(3)
+col1.metric("⭐ Gear Score", df.loc[idx,"gear_score"])
+col2.metric("⚔️ Lực chiến", df.loc[idx,"power"])
+col3.metric("🔥 DPS", df.loc[idx,"dps"])
 
 # ===== UPDATE =====
 st.subheader("✏️ Update")
 
-c1, c2, c3 = st.columns(3)
-
+c1,c2,c3 = st.columns(3)
 with c1:
     use_energy = st.checkbox("Energy")
-    energy_val = st.number_input("Energy", 0, MAX_ENERGY, 0)
-
+    energy_val = st.number_input("Energy",0,MAX_ENERGY,0)
 with c2:
     use_nightmare = st.checkbox("Nightmare")
-    nightmare_val = st.number_input("Nightmare", 0, MAX_NIGHTMARE, 0)
-
+    nightmare_val = st.number_input("Nightmare",0,MAX_NIGHTMARE,0)
 with c3:
     use_trial = st.checkbox("Trial")
-    trial_val = st.number_input("Trial", 0, 10, 0)
+    trial_val = st.number_input("Trial",0,10,0)
 
 if st.button("💾 Update"):
     if use_energy:
-        df.loc[idx, "energy"] = energy_val
-        df.loc[idx, "last_update"] = get_block_time(pd.Timestamp.now(tz=UTC7))
-
+        df.loc[idx,"energy"] = energy_val
+        df.loc[idx,"last_update"] = get_block_time(pd.Timestamp.now(tz=UTC7))
     if use_nightmare:
-        df.loc[idx, "nightmare"] = nightmare_val
-
+        df.loc[idx,"nightmare"] = nightmare_val
     if use_trial:
-        df.loc[idx, "trial"] = trial_val
+        df.loc[idx,"trial"] = trial_val
 
     save_data(df)
     st.rerun()
 
 # ===== GLOBAL =====
 st.subheader("🔧 Global")
-
 if st.button("Reset Trial"):
-    df["trial"] = 3
+    df["trial"]=3
     save_data(df)
     st.rerun()
 
 if st.button("+2 Nightmare"):
-    df["nightmare"] = (df["nightmare"] + 2).clip(upper=MAX_NIGHTMARE)
+    df["nightmare"]=(df["nightmare"]+2).clip(upper=MAX_NIGHTMARE)
     save_data(df)
     st.rerun()
 
-# ===== GEAR INPUT =====
-st.subheader("🛡️ Gear")
+# ===== GEAR + STATS =====
+st.subheader("🛡️ Gear + Stats")
 
-gear_input = {}
+col1,col2 = st.columns(2)
+with col1:
+    power_val = st.number_input("Lực chiến",0,100000,int(df.loc[idx,"power"]))
+with col2:
+    dps_val = st.number_input("DPS",0,1000000,int(df.loc[idx,"dps"]))
 
-for key, label in gear_slots:
-    col1, col2 = st.columns(2)
+gear_input={}
+for k,label in gear_slots:
+    c1,c2=st.columns(2)
+    with c1:
+        name=st.text_input(label, df.loc[idx,f"{k}_name"])
+    with c2:
+        lv=st.number_input(f"{label} Lv",0,20,int(df.loc[idx,f"{k}_level"]))
+    gear_input[k]=(name,lv)
 
-    with col1:
-        name = st.text_input(label, df.loc[idx, f"{key}_name"])
+if st.button("💾 Save Gear + Stats"):
+    for k,(n,lv) in gear_input.items():
+        df.loc[idx,f"{k}_name"]=n
+        df.loc[idx,f"{k}_level"]=lv
 
-    with col2:
-        level = st.number_input(f"{label} Lv", 0, 20, int(df.loc[idx, f"{key}_level"]))
-
-    gear_input[key] = (name, level)
-
-if st.button("💾 Save Gear"):
-    for key, (name, level) in gear_input.items():
-        df.loc[idx, f"{key}_name"] = name
-        df.loc[idx, f"{key}_level"] = level
+    df.loc[idx,"power"]=power_val
+    df.loc[idx,"dps"]=dps_val
 
     save_data(df)
     st.rerun()
@@ -237,34 +239,32 @@ if st.button("💾 Save Gear"):
 # ===== GEAR VIEW =====
 st.subheader("📦 Gear Status")
 
-gear_view = []
-for key, label in gear_slots:
+gear_view=[]
+for k,label in gear_slots:
     gear_view.append({
-        "Slot": label,
-        "Tên": df.loc[idx, f"{key}_name"],
-        "Level": df.loc[idx, f"{key}_level"]
+        "Slot":label,
+        "Tên":df.loc[idx,f"{k}_name"],
+        "Level":df.loc[idx,f"{k}_level"]
     })
 
-gear_df = pd.DataFrame(gear_view)
+gear_df=pd.DataFrame(gear_view)
 
 def gear_style(row):
-    c = gear_color(row["Tên"], row["Level"])
-    return [c, c, c]
+    c=gear_color(row["Tên"],row["Level"])
+    return [c,c,c]
 
-st.dataframe(gear_df.style.apply(gear_style, axis=1), use_container_width=True)
+st.dataframe(gear_df.style.apply(gear_style,axis=1),use_container_width=True)
 
 # ===== CHART =====
 st.subheader("📊 So sánh Gear Score")
-chart_df = df[["character", "gear_score"]].set_index("character")
-st.bar_chart(chart_df)
+st.bar_chart(df.set_index("character")["gear_score"])
 
 # ===== SUGGEST =====
 st.subheader("🧠 Gợi ý nâng cấp")
 
-suggestions = suggest_upgrade(df, idx)
-
-if suggestions:
-    for s in suggestions:
+sug = suggest_upgrade(df,idx)
+if sug:
+    for s in sug:
         st.write(s)
 else:
     st.success("Trang bị ổn 👍")
