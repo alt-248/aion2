@@ -5,7 +5,7 @@ from supabase import create_client
 
 # ================= CONFIG =================
 SUPABASE_URL = "https://buvlpbyaantuatsyzkns.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ1dmxwYnlhYW50dWF0c3l6a25zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY2ODQ3MjIsImV4cCI6MjA5MjI2MDcyMn0.DTjsobGBVNLaKInkb-TzaQhGoDiRz3O3BXRByyOmMBA"
+SUPABASE_KEY = "sb_publishable_Kmw11LUjj7WkqahQAD-G8w_zC38Gv-H"
 MAX_ENERGY = 840
 MAX_NIGHTMARE = 14
 UTC7 = timezone(timedelta(hours=7))
