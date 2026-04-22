@@ -1,17 +1,17 @@
 import streamlit as st
 import pandas as pd
+import requests
+import base64
 from datetime import timezone, timedelta
-from supabase import create_client
 
 # ===== CONFIG =====
-SUPABASE_URL = st.secrets["SUPABASE_URL"]
-SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
-
 MAX_ENERGY = 840
 MAX_NIGHTMARE = 14
 UTC7 = timezone(timedelta(hours=7))
 
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+REPO = st.secrets["GITHUB_REPO"]
+TOKEN = st.secrets["GITHUB_TOKEN"]
+FILE_PATH = st.secrets["GITHUB_FILE"]
 
 # ===== GEAR =====
 gear_slots = [
@@ -20,46 +20,58 @@ gear_slots = [
     "necklace","ring1","ring2","bracelet1","bracelet2"
 ]
 
-# ===== INIT =====
-def init_data():
-    chars = ["Cleric","Chanter","Templar","Gladiator",
-             "Ranger","Sorcerer","Assassin","Elementalist"]
-
-    now = pd.Timestamp.now(tz=UTC7)
-
-    for c in chars:
-        supabase.table("characters").upsert({
-            "character": c,
-            "energy": 0,
-            "nightmare": 0,
-            "trial": 0,
-            "power": 0,
-            "dps": 0,
-            "last_update": str(now),
-            "last_nm_update": str(now)
-        }, on_conflict="character").execute()
-
-# ===== LOAD =====
+# ===== LOAD CSV =====
+@st.cache_data(ttl=10)
 def load_data():
-    res = supabase.table("characters").select("*").execute()
+    url = f"https://raw.githubusercontent.com/{REPO}/main/{FILE_PATH}"
 
-    if not res.data:
-        init_data()
-        res = supabase.table("characters").select("*").execute()
+    try:
+        df = pd.read_csv(url)
+    except:
+        st.error("Không load được CSV từ GitHub")
+        return pd.DataFrame()
 
-    df = pd.DataFrame(res.data)
+    # đảm bảo có đủ cột gear
+    for g in gear_slots:
+        col = f"{g}_level"
+        if col not in df:
+            df[col] = 0
 
     df["last_update"] = pd.to_datetime(df["last_update"], errors="coerce")
     df["last_nm_update"] = pd.to_datetime(df["last_nm_update"], errors="coerce")
 
     return df.fillna(0)
 
+# ===== GET SHA =====
+def get_file_sha():
+    url = f"https://api.github.com/repos/{REPO}/contents/{FILE_PATH}"
+    headers = {"Authorization": f"token {TOKEN}"}
+    res = requests.get(url, headers=headers)
+    return res.json()["sha"]
+
 # ===== SAVE =====
-def save_row(row):
-    supabase.table("characters").upsert(
-        row.to_dict(),
-        on_conflict="character"
-    ).execute()
+def save_all(df):
+    csv_content = df.to_csv(index=False)
+    encoded = base64.b64encode(csv_content.encode()).decode()
+
+    url = f"https://api.github.com/repos/{REPO}/contents/{FILE_PATH}"
+    headers = {"Authorization": f"token {TOKEN}"}
+
+    sha = get_file_sha()
+
+    data = {
+        "message": "update from streamlit",
+        "content": encoded,
+        "sha": sha
+    }
+
+    res = requests.put(url, json=data, headers=headers)
+
+    if res.status_code != 200:
+        st.error(res.text)
+        return False
+
+    return True
 
 # ===== TIME =====
 def get_block_time(dt):
@@ -109,17 +121,12 @@ def update_nm(df):
 
 # ===== SCORE =====
 def calc_score(df):
-    for g in gear_slots:
-        col = f"{g}_level"
-        if col not in df:
-            df[col] = 0
-
     df["gear_score"] = df[[f"{g}_level" for g in gear_slots]].sum(axis=1)
     return df
 
 # ===== UI =====
 st.set_page_config(layout="wide")
-st.title("⚡ Energy Tracker PRO")
+st.title("⚡ Energy Tracker PRO (GitHub CSV)")
 
 df = load_data()
 df = update_energy(df)
@@ -146,9 +153,10 @@ if st.button("💾 Save"):
     df.loc[idx,"trial"] = trial
     df.loc[idx,"last_update"] = get_block_time(pd.Timestamp.now(tz=UTC7))
 
-    save_row(df.loc[idx])
-    st.success("Saved!")
-    st.rerun()
+    if save_all(df):
+        st.success("Saved!")
+        st.cache_data.clear()
+        st.rerun()
 
 # GEAR
 st.subheader("Gear")
@@ -164,12 +172,14 @@ if st.button("💾 Save Gear"):
     for g,v in gear_data.items():
         df.loc[idx,f"{g}_level"] = v
 
+    df.loc[idx["power"]] = power
     df.loc[idx,"power"] = power
     df.loc[idx,"dps"] = dps
 
-    save_row(df.loc[idx])
-    st.success("Gear saved!")
-    st.rerun()
+    if save_all(df):
+        st.success("Gear saved!")
+        st.cache_data.clear()
+        st.rerun()
 
 # RANK
 st.subheader("🏆 Rank")
