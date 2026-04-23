@@ -15,11 +15,6 @@ GITHUB_FILE = st.secrets["GITHUB_FILE"]
 
 API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{GITHUB_FILE}"
 
-HEADERS = {
-    "Authorization": f"token {GITHUB_TOKEN}",
-    "Accept": "application/vnd.github.v3+json"
-}
-
 # ================= INIT =================
 def init_data():
     return pd.DataFrame({
@@ -35,67 +30,33 @@ def init_data():
 
 # ================= LOAD =================
 def load_data():
-    res = requests.get(API_URL, headers=HEADERS)
+    headers = {"Authorization": f"token {GITHUB_TOKEN}"}
+    res = requests.get(API_URL, headers=headers)
 
     if res.status_code == 200:
         content = res.json()
         file_data = base64.b64decode(content["content"])
-
         df = pd.read_csv(pd.io.common.BytesIO(file_data))
         df["last_update"] = pd.to_datetime(df["last_update"], errors="coerce")
-
         return df, content["sha"]
 
-    elif res.status_code == 404:
-        st.warning("⚠️ File chưa tồn tại trên GitHub → tạo mới")
-        df = init_data()
-        sha = create_file(df)
-        return df, sha
-
-    else:
-        st.error(f"❌ Load lỗi GitHub: {res.text}")
-        return init_data(), None
-
-# ================= CREATE FILE =================
-def create_file(df):
-    csv_data = df.to_csv(index=False)
-    encoded = base64.b64encode(csv_data.encode()).decode()
-
-    payload = {
-        "message": "create data file",
-        "content": encoded
-    }
-
-    res = requests.put(API_URL, json=payload, headers=HEADERS)
-
-    if res.status_code in [200, 201]:
-        return res.json()["content"]["sha"]
-    else:
-        st.error(f"❌ Create file lỗi: {res.text}")
-        return None
+    return init_data(), None
 
 # ================= SAVE =================
 def save_data(df, sha):
+    headers = {"Authorization": f"token {GITHUB_TOKEN}"}
     csv_data = df.to_csv(index=False)
     encoded = base64.b64encode(csv_data.encode()).decode()
 
     payload = {
         "message": "update data",
         "content": encoded,
+        "sha": sha
     }
 
-    if sha:
-        payload["sha"] = sha
+    requests.put(API_URL, json=payload, headers=headers)
 
-    res = requests.put(API_URL, json=payload, headers=HEADERS)
-
-    if res.status_code in [200, 201]:
-        return res.json()["content"]["sha"]
-    else:
-        st.error(f"❌ Save lỗi: {res.text}")
-        return sha
-
-# ================= TIME =================
+# ================= TIME BLOCK =================
 def get_block_time(dt):
     if dt.tzinfo is None:
         dt = dt.tz_localize(UTC7)
@@ -131,19 +92,65 @@ def update_energy(df):
 
     return df
 
-# ================= SESSION =================
+# ================= ALERT =================
+def check_alert(df):
+    full_energy = df[df["energy"] >= MAX_ENERGY]["character"].tolist()
+    full_nightmare = df[df["nightmare"] >= MAX_NIGHTMARE]["character"].tolist()
+    return full_energy, full_nightmare
+
+# ================= HIGHLIGHT =================
+def highlight_status(df):
+    def color_energy(val):
+        if val >= MAX_ENERGY:
+            return "background-color: red; color: white"
+        elif val >= MAX_ENERGY * 0.8:
+            return "background-color: yellow"
+        return ""
+
+    def color_nightmare(val):
+        if val >= MAX_NIGHTMARE:
+            return "background-color: red; color: white"
+        elif val >= MAX_NIGHTMARE * 0.8:
+            return "background-color: yellow"
+        return ""
+
+    style = pd.DataFrame("", index=df.index, columns=df.columns)
+    style["energy"] = df["energy"].apply(color_energy)
+    style["nightmare"] = df["nightmare"].apply(color_nightmare)
+    return style
+
+# ================= INIT SESSION =================
 if "df" not in st.session_state:
     df, sha = load_data()
     st.session_state.df = df
     st.session_state.sha = sha
 
 # ================= APP =================
-st.title("⚡ Energy Tracker GitHub FIX")
+st.set_page_config(page_title="Energy Tracker PRO", layout="wide")
+st.title("⚡ Energy Tracker PRO (GitHub Sync)")
 
-# update energy mỗi lần load
+# luôn update energy trước khi hiển thị
 st.session_state.df = update_energy(st.session_state.df)
 
-st.dataframe(st.session_state.df, use_container_width=True)
+# ================= ALERT =================
+full_energy, full_nightmare = check_alert(st.session_state.df)
+
+if full_energy or full_nightmare:
+    st.warning("⚠️ Cảnh báo trạng thái đầy!")
+
+if full_energy:
+    st.error(f"🔥 Full Energy: {', '.join(full_energy)}")
+
+if full_nightmare:
+    st.error(f"💀 Full Nightmare: {', '.join(full_nightmare)}")
+
+# ================= TABLE =================
+st.subheader("📊 Bảng dữ liệu")
+styled_df = st.session_state.df.style.apply(lambda x: highlight_status(st.session_state.df), axis=None)
+st.dataframe(styled_df, use_container_width=True)
+
+# ================= SELECT =================
+st.subheader("🎮 Chọn nhân vật")
 
 idx = st.selectbox(
     "Character",
@@ -151,18 +158,72 @@ idx = st.selectbox(
     format_func=lambda x: st.session_state.df.loc[x, "character"]
 )
 
-energy = st.number_input("Energy", 0, MAX_ENERGY, int(st.session_state.df.loc[idx, "energy"]))
-nightmare = st.number_input("Nightmare", 0, MAX_NIGHTMARE, int(st.session_state.df.loc[idx, "nightmare"]))
-trial = st.number_input("Trial", 0, 10, int(st.session_state.df.loc[idx, "trial"]))
+# ================= INPUT =================
+col1, col2, col3 = st.columns(3)
 
-# ================= SAVE =================
+with col1:
+    energy = st.number_input("Energy", 0, MAX_ENERGY, int(st.session_state.df.loc[idx, "energy"]))
+
+with col2:
+    nightmare = st.number_input("Nightmare", 0, MAX_NIGHTMARE, int(st.session_state.df.loc[idx, "nightmare"]))
+
+with col3:
+    trial = st.number_input("Trial", 0, 10, int(st.session_state.df.loc[idx, "trial"]))
+
+# ================= SAVE BUTTON =================
 if st.button("💾 Save"):
+    # update local state ngay lập tức
     st.session_state.df.loc[idx, "energy"] = energy
     st.session_state.df.loc[idx, "nightmare"] = nightmare
     st.session_state.df.loc[idx, "trial"] = trial
 
-    new_sha = save_data(st.session_state.df, st.session_state.sha)
+    # save github
+    save_data(st.session_state.df, st.session_state.sha)
+
+    # reload lại sha mới (QUAN TRỌNG)
+    new_df, new_sha = load_data()
+    st.session_state.df = new_df
     st.session_state.sha = new_sha
 
-    st.success("✅ Saved thành công!")
+    st.success("✅ Saved & synced!")
+    st.rerun()
+
+# ================= GLOBAL =================
+st.subheader("🔧 Toàn server")
+
+c1, c2 = st.columns(2)
+
+with c1:
+    if st.button("🔁 Reset Trial = 3"):
+        st.session_state.df["trial"] = 3
+        save_data(st.session_state.df, st.session_state.sha)
+
+        new_df, new_sha = load_data()
+        st.session_state.df = new_df
+        st.session_state.sha = new_sha
+
+        st.rerun()
+
+with c2:
+    if st.button("⚔️ +2 Nightmare"):
+        st.session_state.df["nightmare"] = (st.session_state.df["nightmare"] + 2).clip(upper=MAX_NIGHTMARE)
+        save_data(st.session_state.df, st.session_state.sha)
+
+        new_df, new_sha = load_data()
+        st.session_state.df = new_df
+        st.session_state.sha = new_sha
+
+        st.rerun()
+
+# ================= MANUAL ENERGY =================
+st.subheader("⚡ Energy System")
+
+if st.button("Update Energy Now"):
+    st.session_state.df = update_energy(st.session_state.df)
+    save_data(st.session_state.df, st.session_state.sha)
+
+    new_df, new_sha = load_data()
+    st.session_state.df = new_df
+    st.session_state.sha = new_sha
+
     st.rerun()
