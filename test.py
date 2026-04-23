@@ -22,10 +22,10 @@ gear_slots = [
     "necklace","ring1","ring2","bracelet1","bracelet2"
 ]
 
-# ===== BUILD SUGGEST =====
+# ===== BUILD =====
 build_suggest = {
-    "Cleric": "Heal + HP + Block",
-    "Chanter": "Buff + Speed + Hybrid",
+    "Cleric": "Hồi máu + HP + Block",
+    "Chanter": "Buff + Tốc độ + Hybrid",
     "Templar": "Tank + HP + DEF",
     "Gladiator": "Crit + ATK",
     "Ranger": "Crit + Speed",
@@ -38,8 +38,8 @@ build_suggest = {
 def init_data():
     chars = list(build_suggest.keys())
     now = datetime.now()
-
     data = []
+
     for c in chars:
         row = {
             "character": c,
@@ -61,8 +61,8 @@ def init_data():
 def get_sha():
     url = f"https://api.github.com/repos/{REPO}/contents/{FILE_PATH}"
     headers = {"Authorization": f"token {TOKEN}"}
-    res = requests.get(url, headers=headers)
-    return res.json().get("sha") if res.status_code == 200 else None
+    r = requests.get(url, headers=headers)
+    return r.json().get("sha") if r.status_code == 200 else None
 
 def save(df):
     df2 = df.copy()
@@ -70,8 +70,8 @@ def save(df):
     df2["last_nm_update"] = df2["last_nm_update"].astype(str)
 
     content = base64.b64encode(df2.to_csv(index=False).encode()).decode()
-
     data = {"message":"update","content":content}
+
     sha = get_sha()
     if sha:
         data["sha"] = sha
@@ -141,33 +141,49 @@ def calc_score(df):
     return df
 
 # ===== UI =====
-st.title("⚡ Energy Tracker PRO++")
+st.title("⚡ Quản Lý Energy PRO")
 
 df = load()
 df = update_energy(df)
 df = update_nm(df)
 df = calc_score(df)
 
-# ===== ALERT =====
-st.subheader("⚠️ Alerts")
+# ===== ALERT GỘP =====
+full_energy = []
+warn_energy = []
+full_nm = []
+
 for i in df.index:
     char = df.loc[i,"character"]
     e = df.loc[i,"energy"]
+    nm = df.loc[i,"nightmare"]
 
     if e >= MAX_ENERGY:
-        st.error(f"{char} FULL ENERGY!")
+        full_energy.append(char)
     elif e >= MAX_ENERGY*0.8:
-        st.warning(f"{char} sắp full ({e})")
+        warn_energy.append(char)
+
+    if nm >= MAX_NIGHTMARE:
+        full_nm.append(char)
+
+if full_energy:
+    st.error("🔴 Full Energy: " + ", ".join(full_energy))
+
+if warn_energy:
+    st.warning("🟡 Sắp Full Energy: " + ", ".join(warn_energy))
+
+if full_nm:
+    st.error("👻 Full Nightmare: " + ", ".join(full_nm))
 
 # ===== TABLE =====
-st.subheader("📊 Energy Table")
+st.subheader("📊 Bảng Energy")
 st.dataframe(df[["character","energy","nightmare","trial"]])
 
 # ===== SELECT =====
-idx = st.selectbox("Nhân vật", df.index, format_func=lambda x: df.loc[x,"character"])
+idx = st.selectbox("Chọn nhân vật", df.index, format_func=lambda x: df.loc[x,"character"])
 
-# ===== UPDATE MULTI =====
-st.subheader("Update (chọn nhiều)")
+# ===== UPDATE =====
+st.subheader("Cập nhật")
 
 col1,col2,col3 = st.columns(3)
 
@@ -182,7 +198,7 @@ if use_nm:
 if use_trial:
     val_trial = st.number_input("Trial",0,10,int(df.loc[idx,"trial"]))
 
-if st.button("💾 Save Update"):
+if st.button("💾 Lưu cập nhật"):
     if use_energy:
         df.loc[idx,"energy"] = val_energy
         df.loc[idx,"last_update"] = get_block_time(datetime.now())
@@ -192,26 +208,26 @@ if st.button("💾 Save Update"):
         df.loc[idx,"trial"] = val_trial
 
     if save(df):
-        st.success("Saved!")
+        st.success("Đã lưu!")
         st.cache_data.clear()
         st.rerun()
 
 # ===== GEAR TABLE =====
-st.subheader("🛡 Gear Table")
-gear_df = df[[ "character"] + [f"{g}_level" for g in gear_slots]]
+st.subheader("🛡 Bảng Trang Bị")
+gear_df = df[["character","power","dps"] + [f"{g}_level" for g in gear_slots]]
 st.dataframe(gear_df)
 
-# ===== GEAR EDIT =====
-st.subheader("⚙️ Edit Gear")
+# ===== EDIT GEAR =====
+st.subheader("⚙️ Chỉnh Trang Bị")
+
+power = st.number_input("Lực chiến",0,999999,int(df.loc[idx,"power"]))
+dps = st.number_input("DPS",0,999999,int(df.loc[idx,"dps"]))
 
 gear_inputs = {}
 for g in gear_slots:
     gear_inputs[g] = st.number_input(g,0,9999,int(df.loc[idx,f"{g}_level"]))
 
-power = st.number_input("Power",0,999999,int(df.loc[idx,"power"]))
-dps = st.number_input("DPS",0,999999,int(df.loc[idx,"dps"]))
-
-if st.button("💾 Save Gear"):
+if st.button("💾 Lưu Trang Bị"):
     for g,v in gear_inputs.items():
         df.loc[idx,f"{g}_level"] = v
 
@@ -219,16 +235,16 @@ if st.button("💾 Save Gear"):
     df.loc[idx,"dps"] = dps
 
     if save(df):
-        st.success("Gear saved!")
+        st.success("Đã lưu gear!")
         st.cache_data.clear()
         st.rerun()
 
-# ===== BUILD SUGGEST =====
-st.subheader("🧠 Build Suggestion")
+# ===== BUILD =====
+st.subheader("🧠 Gợi ý build")
 char = df.loc[idx,"character"]
 st.info(f"{char}: {build_suggest.get(char,'')}")
 
 # ===== RANK =====
-st.subheader("🏆 Rank")
+st.subheader("🏆 Xếp hạng")
 rank = df.sort_values(["power","dps","gear_score"],ascending=False)
 st.dataframe(rank[["character","power","dps","gear_score"]])
