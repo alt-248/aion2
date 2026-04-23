@@ -2,12 +2,11 @@ import streamlit as st
 import pandas as pd
 import requests
 import base64
-from datetime import timezone, timedelta
+from datetime import datetime, timedelta
 
 # ===== CONFIG =====
 MAX_ENERGY = 840
 MAX_NIGHTMARE = 14
-UTC7 = timezone(timedelta(hours=7))
 
 REPO = st.secrets.get("GITHUB_REPO", "")
 TOKEN = st.secrets.get("GITHUB_TOKEN", "")
@@ -24,12 +23,12 @@ gear_slots = [
     "necklace","ring1","ring2","bracelet1","bracelet2"
 ]
 
-# ===== INIT DATA =====
+# ===== INIT =====
 def init_default_data():
     chars = ["Cleric","Chanter","Templar","Gladiator",
              "Ranger","Sorcerer","Assassin","Elementalist"]
 
-    now = pd.Timestamp.now(tz=UTC7)
+    now = datetime.now()
 
     data = []
     for c in chars:
@@ -51,7 +50,7 @@ def init_default_data():
 
     return pd.DataFrame(data)
 
-# ===== GET SHA =====
+# ===== GITHUB =====
 def get_file_sha():
     url = f"https://api.github.com/repos/{REPO}/contents/{FILE_PATH}"
     headers = {"Authorization": f"token {TOKEN}"}
@@ -61,11 +60,9 @@ def get_file_sha():
         return res.json()["sha"]
     return None
 
-# ===== SAVE =====
 def save_all(df):
     df_copy = df.copy()
 
-    # convert datetime → string trước khi lưu
     df_copy["last_update"] = df_copy["last_update"].astype(str)
     df_copy["last_nm_update"] = df_copy["last_nm_update"].astype(str)
 
@@ -78,8 +75,8 @@ def save_all(df):
     sha = get_file_sha()
 
     data = {
-        "message": "update from streamlit",
-        "content": encoded,
+        "message": "update data",
+        "content": encoded
     }
 
     if sha:
@@ -105,18 +102,18 @@ def load_data():
         save_all(df)
         return df
 
-    # đảm bảo có đủ gear
+    # đảm bảo có gear
     for g in gear_slots:
         col = f"{g}_level"
         if col not in df:
             df[col] = 0
 
-    # FIX datetime
+    # FIX datetime (NO TZ)
     df["last_update"] = pd.to_datetime(df["last_update"], errors="coerce")
     df["last_nm_update"] = pd.to_datetime(df["last_nm_update"], errors="coerce")
 
-    # nếu NaT → set thời gian hiện tại
-    now = pd.Timestamp.now(tz=UTC7)
+    now = datetime.now()
+
     df["last_update"] = df["last_update"].fillna(now)
     df["last_nm_update"] = df["last_nm_update"].fillna(now)
 
@@ -124,12 +121,11 @@ def load_data():
 
 # ===== TIME =====
 def get_block_time(dt):
-    dt = dt.tz_convert(UTC7) if dt.tzinfo else dt.tz_localize(UTC7)
     return dt.replace(hour=(dt.hour//3)*3, minute=0, second=0, microsecond=0)
 
 # ===== ENERGY =====
 def update_energy(df):
-    now_block = get_block_time(pd.Timestamp.now(tz=UTC7))
+    now_block = get_block_time(datetime.now())
 
     for i in df.index:
         last = df.loc[i,"last_update"]
@@ -138,17 +134,17 @@ def update_energy(df):
             df.at[i,"last_update"] = now_block
             continue
 
-        diff = int((now_block-last).total_seconds()//3600)//3
+        diff = int((now_block - last).total_seconds() // 3600) // 3
 
         if diff > 0:
-            df.at[i,"energy"] = min(df.loc[i,"energy"]+diff*15, MAX_ENERGY)
-            df.at[i,"last_update"] = last + pd.Timedelta(hours=diff*3)
+            df.at[i,"energy"] = min(df.loc[i,"energy"] + diff*15, MAX_ENERGY)
+            df.at[i,"last_update"] = last + timedelta(hours=diff*3)
 
     return df
 
 # ===== NIGHTMARE =====
 def update_nm(df):
-    now = pd.Timestamp.now(tz=UTC7).normalize()
+    now = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
 
     for i in df.index:
         last = df.loc[i,"last_nm_update"]
@@ -157,10 +153,10 @@ def update_nm(df):
             df.at[i,"last_nm_update"] = now
             continue
 
-        days = (now-last.normalize()).days
+        days = (now - last.replace(hour=0, minute=0, second=0, microsecond=0)).days
 
         if days > 0:
-            df.at[i,"nightmare"] = min(df.loc[i,"nightmare"]+days*2, MAX_NIGHTMARE)
+            df.at[i,"nightmare"] = min(df.loc[i,"nightmare"] + days*2, MAX_NIGHTMARE)
             df.at[i,"last_nm_update"] = now
 
     return df
@@ -197,7 +193,7 @@ if st.button("💾 Save"):
     df.loc[idx,"energy"] = energy
     df.loc[idx,"nightmare"] = nm
     df.loc[idx,"trial"] = trial
-    df.loc[idx,"last_update"] = get_block_time(pd.Timestamp.now(tz=UTC7))
+    df.loc[idx,"last_update"] = get_block_time(datetime.now())
 
     if save_all(df):
         st.success("Saved!")
