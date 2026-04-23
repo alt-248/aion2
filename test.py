@@ -9,9 +9,13 @@ MAX_ENERGY = 840
 MAX_NIGHTMARE = 14
 UTC7 = timezone(timedelta(hours=7))
 
-REPO = st.secrets["GITHUB_REPO"]
-TOKEN = st.secrets["GITHUB_TOKEN"]
-FILE_PATH = st.secrets["GITHUB_FILE"]
+REPO = st.secrets.get("GITHUB_REPO", "")
+TOKEN = st.secrets.get("GITHUB_TOKEN", "")
+FILE_PATH = st.secrets.get("GITHUB_FILE", "data.csv")
+
+if not REPO or not TOKEN:
+    st.error("❌ Thiếu cấu hình GitHub trong secrets")
+    st.stop()
 
 # ===== GEAR =====
 gear_slots = [
@@ -20,38 +24,52 @@ gear_slots = [
     "necklace","ring1","ring2","bracelet1","bracelet2"
 ]
 
-# ===== LOAD CSV =====
-@st.cache_data(ttl=10)
-def load_data():
-    url = f"https://raw.githubusercontent.com/{REPO}/main/{FILE_PATH}"
+# ===== INIT DATA =====
+def init_default_data():
+    chars = ["Cleric","Chanter","Templar","Gladiator",
+             "Ranger","Sorcerer","Assassin","Elementalist"]
 
-    try:
-        df = pd.read_csv(url)
-    except:
-        st.error("Không load được CSV từ GitHub")
-        return pd.DataFrame()
+    now = pd.Timestamp.now(tz=UTC7)
 
-    # đảm bảo có đủ cột gear
-    for g in gear_slots:
-        col = f"{g}_level"
-        if col not in df:
-            df[col] = 0
+    data = []
+    for c in chars:
+        row = {
+            "character": c,
+            "energy": 0,
+            "nightmare": 0,
+            "trial": 0,
+            "power": 0,
+            "dps": 0,
+            "last_update": now,
+            "last_nm_update": now
+        }
 
-    df["last_update"] = pd.to_datetime(df["last_update"], errors="coerce")
-    df["last_nm_update"] = pd.to_datetime(df["last_nm_update"], errors="coerce")
+        for g in gear_slots:
+            row[f"{g}_level"] = 0
 
-    return df.fillna(0)
+        data.append(row)
+
+    return pd.DataFrame(data)
 
 # ===== GET SHA =====
 def get_file_sha():
     url = f"https://api.github.com/repos/{REPO}/contents/{FILE_PATH}"
     headers = {"Authorization": f"token {TOKEN}"}
     res = requests.get(url, headers=headers)
-    return res.json()["sha"]
+
+    if res.status_code == 200:
+        return res.json()["sha"]
+    return None
 
 # ===== SAVE =====
 def save_all(df):
-    csv_content = df.to_csv(index=False)
+    df_copy = df.copy()
+
+    # convert datetime → string trước khi lưu
+    df_copy["last_update"] = df_copy["last_update"].astype(str)
+    df_copy["last_nm_update"] = df_copy["last_nm_update"].astype(str)
+
+    csv_content = df_copy.to_csv(index=False)
     encoded = base64.b64encode(csv_content.encode()).decode()
 
     url = f"https://api.github.com/repos/{REPO}/contents/{FILE_PATH}"
@@ -62,16 +80,47 @@ def save_all(df):
     data = {
         "message": "update from streamlit",
         "content": encoded,
-        "sha": sha
     }
+
+    if sha:
+        data["sha"] = sha
 
     res = requests.put(url, json=data, headers=headers)
 
-    if res.status_code != 200:
+    if res.status_code not in [200, 201]:
         st.error(res.text)
         return False
 
     return True
+
+# ===== LOAD =====
+@st.cache_data(ttl=10)
+def load_data():
+    url = f"https://raw.githubusercontent.com/{REPO}/main/{FILE_PATH}"
+
+    try:
+        df = pd.read_csv(url)
+    except:
+        df = init_default_data()
+        save_all(df)
+        return df
+
+    # đảm bảo có đủ gear
+    for g in gear_slots:
+        col = f"{g}_level"
+        if col not in df:
+            df[col] = 0
+
+    # FIX datetime
+    df["last_update"] = pd.to_datetime(df["last_update"], errors="coerce")
+    df["last_nm_update"] = pd.to_datetime(df["last_nm_update"], errors="coerce")
+
+    # nếu NaT → set thời gian hiện tại
+    now = pd.Timestamp.now(tz=UTC7)
+    df["last_update"] = df["last_update"].fillna(now)
+    df["last_nm_update"] = df["last_nm_update"].fillna(now)
+
+    return df
 
 # ===== TIME =====
 def get_block_time(dt):
@@ -86,16 +135,14 @@ def update_energy(df):
         last = df.loc[i,"last_update"]
 
         if pd.isna(last):
-            df.loc[i,"last_update"] = now_block
+            df.at[i,"last_update"] = now_block
             continue
-
-        last = last.tz_convert(UTC7) if last.tzinfo else last.tz_localize(UTC7)
 
         diff = int((now_block-last).total_seconds()//3600)//3
 
         if diff > 0:
-            df.loc[i,"energy"] = min(df.loc[i,"energy"]+diff*15, MAX_ENERGY)
-            df.loc[i,"last_update"] = last + pd.Timedelta(hours=diff*3)
+            df.at[i,"energy"] = min(df.loc[i,"energy"]+diff*15, MAX_ENERGY)
+            df.at[i,"last_update"] = last + pd.Timedelta(hours=diff*3)
 
     return df
 
@@ -107,15 +154,14 @@ def update_nm(df):
         last = df.loc[i,"last_nm_update"]
 
         if pd.isna(last):
-            df.loc[i,"last_nm_update"] = now
+            df.at[i,"last_nm_update"] = now
             continue
 
-        last = last.tz_convert(UTC7) if last.tzinfo else last.tz_localize(UTC7)
         days = (now-last.normalize()).days
 
         if days > 0:
-            df.loc[i,"nightmare"] = min(df.loc[i,"nightmare"]+days*2, MAX_NIGHTMARE)
-            df.loc[i,"last_nm_update"] = now
+            df.at[i,"nightmare"] = min(df.loc[i,"nightmare"]+days*2, MAX_NIGHTMARE)
+            df.at[i,"last_nm_update"] = now
 
     return df
 
@@ -172,7 +218,6 @@ if st.button("💾 Save Gear"):
     for g,v in gear_data.items():
         df.loc[idx,f"{g}_level"] = v
 
-    df.loc[idx["power"]] = power
     df.loc[idx,"power"] = power
     df.loc[idx,"dps"] = dps
 
