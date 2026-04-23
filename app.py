@@ -8,9 +8,9 @@ from datetime import datetime, timedelta
 MAX_ENERGY = 840
 MAX_NIGHTMARE = 14
 
-REPO = st.secrets.get("GITHUB_REPO", "")
-TOKEN = st.secrets.get("GITHUB_TOKEN", "")
-FILE_PATH = st.secrets.get("GITHUB_FILE", "data_character.csv")
+REPO = st.secrets.get("GITHUB_REPO","")
+TOKEN = st.secrets.get("GITHUB_TOKEN","")
+GITHUB_FILE = st.secrets.get("GITHUB_FILE","data_character.csv")
 
 if not REPO or not TOKEN:
     st.error("❌ Thiếu cấu hình GitHub")
@@ -38,7 +38,7 @@ def save_data(df):
 
         content = base64.b64encode(df2.to_csv(index=False).encode()).decode()
 
-        url = f"https://api.github.com/repos/{REPO}/contents/{FILE_PATH}"
+        url = f"https://api.github.com/repos/{REPO}/contents/{GITHUB_FILE}"
         headers = {
             "Authorization": f"token {TOKEN}",
             "Accept": "application/vnd.github+json"
@@ -65,7 +65,7 @@ def save_data(df):
 
 # ================= LOAD =================
 def load_data():
-    url = f"https://raw.githubusercontent.com/{REPO}/main/{FILE_PATH}?t={datetime.now().timestamp()}"
+    url = f"https://raw.githubusercontent.com/{REPO}/main/{GITHUB_FILE}?t={datetime.now().timestamp()}"
 
     try:
         df = pd.read_csv(url)
@@ -74,11 +74,9 @@ def load_data():
         save_data(df)
         return df
 
-    # ép kiểu datetime (KHÔNG timezone)
+    # FIX dtype
     df["last_update"] = pd.to_datetime(df["last_update"], errors="coerce")
-
-    now = datetime.now()
-    df["last_update"] = df["last_update"].fillna(now)
+    df["last_update"] = df["last_update"].fillna(datetime.now())
 
     return df
 
@@ -109,30 +107,24 @@ def update_energy(df):
 def check_alert(df):
     full_energy = df[df["energy"] >= MAX_ENERGY]["character"].tolist()
     full_nm = df[df["nightmare"] >= MAX_NIGHTMARE]["character"].tolist()
-
-    warn_energy = df[
-        (df["energy"] >= MAX_ENERGY*0.8) &
-        (df["energy"] < MAX_ENERGY)
-    ]["character"].tolist()
-
-    return full_energy, warn_energy, full_nm
+    return full_energy, full_nm
 
 # ================= UI =================
-st.set_page_config(layout="wide")
-st.title("⚡ Energy Tracker PRO (Clean)")
+st.set_page_config(page_title="Energy Tracker PRO", layout="wide")
+st.title("⚡ Energy Tracker PRO (Stable)")
 
 df = load_data()
 df = update_energy(df)
 save_data(df)
 
 # ===== ALERT =====
-full_e, warn_e, full_nm = check_alert(df)
+full_e, full_nm = check_alert(df)
+
+if full_e or full_nm:
+    st.warning("⚠️ Cảnh báo trạng thái đầy!")
 
 if full_e:
     st.error("🔥 Full Energy: " + ", ".join(full_e))
-
-if warn_e:
-    st.warning("⚠️ Sắp Full Energy: " + ", ".join(warn_e))
 
 if full_nm:
     st.error("💀 Full Nightmare: " + ", ".join(full_nm))
@@ -142,8 +134,9 @@ st.subheader("📊 Bảng dữ liệu")
 st.dataframe(df, use_container_width=True)
 
 # ===== SELECT =====
-idx = st.selectbox("Chọn nhân vật", df.index,
-                   format_func=lambda x: df.loc[x,"character"])
+st.subheader("🎮 Chọn nhân vật")
+idx = st.selectbox("Character", df.index,
+                   format_func=lambda x: df.loc[x, "character"])
 
 # ===== UPDATE =====
 st.subheader("✏️ Cập nhật")
@@ -152,35 +145,35 @@ col1, col2, col3 = st.columns(3)
 
 with col1:
     use_energy = st.checkbox("Energy")
-    val_energy = st.number_input("Energy",0,MAX_ENERGY,
-                                int(df.loc[idx,"energy"]),
+    energy_val = st.number_input("Energy", 0, MAX_ENERGY,
+                                int(df.loc[idx, "energy"]),
                                 disabled=not use_energy)
 
 with col2:
     use_nm = st.checkbox("Nightmare")
-    val_nm = st.number_input("Nightmare",0,MAX_NIGHTMARE,
-                            int(df.loc[idx,"nightmare"]),
+    nm_val = st.number_input("Nightmare", 0, MAX_NIGHTMARE,
+                            int(df.loc[idx, "nightmare"]),
                             disabled=not use_nm)
 
 with col3:
     use_trial = st.checkbox("Trial")
-    val_trial = st.number_input("Trial",0,10,
-                               int(df.loc[idx,"trial"]),
+    trial_val = st.number_input("Trial", 0, 10,
+                               int(df.loc[idx, "trial"]),
                                disabled=not use_trial)
 
-if st.button("💾 Lưu"):
+if st.button("💾 Cập nhật"):
     if use_energy:
-        df.loc[idx,"energy"] = val_energy
-        df.loc[idx,"last_update"] = get_block_time(datetime.now())
+        df.loc[idx, "energy"] = energy_val
+        df.loc[idx, "last_update"] = get_block_time(datetime.now())
 
     if use_nm:
-        df.loc[idx,"nightmare"] = val_nm
+        df.loc[idx, "nightmare"] = nm_val
 
     if use_trial:
-        df.loc[idx,"trial"] = val_trial
+        df.loc[idx, "trial"] = trial_val
 
     save_data(df)
-    st.success("Đã lưu!")
+    st.success("Đã cập nhật!")
     st.rerun()
 
 # ===== GLOBAL =====
@@ -189,24 +182,24 @@ st.subheader("🔧 Toàn server")
 c1, c2 = st.columns(2)
 
 with c1:
-    if st.button("Reset Trial = 3"):
+    if st.button("🔁 Reset Trial = 3 (All)"):
         df["trial"] = 3
         save_data(df)
-        st.success("Done!")
+        st.success("Reset xong!")
         st.rerun()
 
 with c2:
-    if st.button("+2 Nightmare"):
+    if st.button("⚔️ +2 Nightmare (All)"):
         df["nightmare"] = (df["nightmare"] + 2).clip(upper=MAX_NIGHTMARE)
         save_data(df)
         st.success("Done!")
         st.rerun()
 
 # ===== MANUAL =====
-st.subheader("⚡ Energy Manual")
+st.subheader("⚡ Energy System")
 
 if st.button("Update Energy Now"):
     df = update_energy(df)
     save_data(df)
-    st.success("Updated!")
+    st.success("Đã update!")
     st.rerun()
