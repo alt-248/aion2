@@ -28,7 +28,7 @@ def init_data():
         "last_update": [pd.Timestamp.now(tz=UTC7)]*8
     })
 
-# ================= GITHUB LOAD =================
+# ================= LOAD =================
 def load_data():
     headers = {"Authorization": f"token {GITHUB_TOKEN}"}
     res = requests.get(API_URL, headers=headers)
@@ -42,10 +42,9 @@ def load_data():
 
     return init_data(), None
 
-# ================= GITHUB SAVE =================
+# ================= SAVE =================
 def save_data(df, sha):
     headers = {"Authorization": f"token {GITHUB_TOKEN}"}
-
     csv_data = df.to_csv(index=False)
     encoded = base64.b64encode(csv_data.encode()).decode()
 
@@ -93,30 +92,138 @@ def update_energy(df):
 
     return df
 
+# ================= ALERT =================
+def check_alert(df):
+    full_energy = df[df["energy"] >= MAX_ENERGY]["character"].tolist()
+    full_nightmare = df[df["nightmare"] >= MAX_NIGHTMARE]["character"].tolist()
+    return full_energy, full_nightmare
+
+# ================= HIGHLIGHT =================
+def highlight_status(df):
+    def color_energy(val):
+        if val >= MAX_ENERGY:
+            return "background-color: red; color: white"
+        elif val >= MAX_ENERGY * 0.8:
+            return "background-color: yellow"
+        return ""
+
+    def color_nightmare(val):
+        if val >= MAX_NIGHTMARE:
+            return "background-color: red; color: white"
+        elif val >= MAX_NIGHTMARE * 0.8:
+            return "background-color: yellow"
+        return ""
+
+    style = pd.DataFrame("", index=df.index, columns=df.columns)
+    style["energy"] = df["energy"].apply(color_energy)
+    style["nightmare"] = df["nightmare"].apply(color_nightmare)
+    return style
+
+# ================= INIT SESSION =================
+if "df" not in st.session_state:
+    df, sha = load_data()
+    st.session_state.df = df
+    st.session_state.sha = sha
+
 # ================= APP =================
 st.set_page_config(page_title="Energy Tracker PRO", layout="wide")
-st.title("⚡ Energy Tracker (GitHub Sync)")
+st.title("⚡ Energy Tracker PRO (GitHub Sync)")
 
-df, sha = load_data()
-df = update_energy(df)
+# luôn update energy trước khi hiển thị
+st.session_state.df = update_energy(st.session_state.df)
 
-st.dataframe(df, use_container_width=True)
+# ================= ALERT =================
+full_energy, full_nightmare = check_alert(st.session_state.df)
+
+if full_energy or full_nightmare:
+    st.warning("⚠️ Cảnh báo trạng thái đầy!")
+
+if full_energy:
+    st.error(f"🔥 Full Energy: {', '.join(full_energy)}")
+
+if full_nightmare:
+    st.error(f"💀 Full Nightmare: {', '.join(full_nightmare)}")
+
+# ================= TABLE =================
+st.subheader("📊 Bảng dữ liệu")
+styled_df = st.session_state.df.style.apply(lambda x: highlight_status(st.session_state.df), axis=None)
+st.dataframe(styled_df, use_container_width=True)
+
+# ================= SELECT =================
+st.subheader("🎮 Chọn nhân vật")
 
 idx = st.selectbox(
     "Character",
-    df.index,
-    format_func=lambda x: df.loc[x, "character"]
+    st.session_state.df.index,
+    format_func=lambda x: st.session_state.df.loc[x, "character"]
 )
 
-energy = st.number_input("Energy", 0, MAX_ENERGY, int(df.loc[idx, "energy"]))
-nightmare = st.number_input("Nightmare", 0, MAX_NIGHTMARE, int(df.loc[idx, "nightmare"]))
-trial = st.number_input("Trial", 0, 10, int(df.loc[idx, "trial"]))
+# ================= INPUT =================
+col1, col2, col3 = st.columns(3)
 
+with col1:
+    energy = st.number_input("Energy", 0, MAX_ENERGY, int(st.session_state.df.loc[idx, "energy"]))
+
+with col2:
+    nightmare = st.number_input("Nightmare", 0, MAX_NIGHTMARE, int(st.session_state.df.loc[idx, "nightmare"]))
+
+with col3:
+    trial = st.number_input("Trial", 0, 10, int(st.session_state.df.loc[idx, "trial"]))
+
+# ================= SAVE BUTTON =================
 if st.button("💾 Save"):
-    df.loc[idx, "energy"] = energy
-    df.loc[idx, "nightmare"] = nightmare
-    df.loc[idx, "trial"] = trial
+    # update local state ngay lập tức
+    st.session_state.df.loc[idx, "energy"] = energy
+    st.session_state.df.loc[idx, "nightmare"] = nightmare
+    st.session_state.df.loc[idx, "trial"] = trial
 
-    save_data(df, sha)
-    st.success("Saved to GitHub!")
+    # save github
+    save_data(st.session_state.df, st.session_state.sha)
+
+    # reload lại sha mới (QUAN TRỌNG)
+    new_df, new_sha = load_data()
+    st.session_state.df = new_df
+    st.session_state.sha = new_sha
+
+    st.success("✅ Saved & synced!")
+    st.rerun()
+
+# ================= GLOBAL =================
+st.subheader("🔧 Toàn server")
+
+c1, c2 = st.columns(2)
+
+with c1:
+    if st.button("🔁 Reset Trial = 3"):
+        st.session_state.df["trial"] = 3
+        save_data(st.session_state.df, st.session_state.sha)
+
+        new_df, new_sha = load_data()
+        st.session_state.df = new_df
+        st.session_state.sha = new_sha
+
+        st.rerun()
+
+with c2:
+    if st.button("⚔️ +2 Nightmare"):
+        st.session_state.df["nightmare"] = (st.session_state.df["nightmare"] + 2).clip(upper=MAX_NIGHTMARE)
+        save_data(st.session_state.df, st.session_state.sha)
+
+        new_df, new_sha = load_data()
+        st.session_state.df = new_df
+        st.session_state.sha = new_sha
+
+        st.rerun()
+
+# ================= MANUAL ENERGY =================
+st.subheader("⚡ Energy System")
+
+if st.button("Update Energy Now"):
+    st.session_state.df = update_energy(st.session_state.df)
+    save_data(st.session_state.df, st.session_state.sha)
+
+    new_df, new_sha = load_data()
+    st.session_state.df = new_df
+    st.session_state.sha = new_sha
+
     st.rerun()
