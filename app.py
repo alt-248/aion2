@@ -201,7 +201,8 @@ if st.button("💾 Cập nhật"):
 
 # ================= GLOBAL =================  
 st.subheader("🔧 Toàn server")  
-
+st.write(REPO)
+st.write(len(TOKEN))
 c1, c2 = st.columns(2)  
 
 with c1:  
