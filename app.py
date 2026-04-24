@@ -30,39 +30,57 @@ def init_data():
 
 # ================= LOAD =================
 def load_data():
-    headers = {"Authorization": f"token {GITHUB_TOKEN}"}
+    headers = {
+        "Authorization": f"token {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+
     res = requests.get(API_URL, headers=headers)
 
     if res.status_code == 200:
         content = res.json()
         file_data = base64.b64decode(content["content"])
-        
+
         df = pd.read_csv(pd.io.common.BytesIO(file_data))
 
         df["last_update"] = pd.to_datetime(df["last_update"], errors="coerce")
 
         if df["last_update"].dt.tz is None:
-           df["last_update"] = df["last_update"].dt.tz_localize(UTC7)
+            df["last_update"] = df["last_update"].dt.tz_localize(UTC7)
         else:
-           df["last_update"] = df["last_update"].dt.tz_convert(UTC7)
+            df["last_update"] = df["last_update"].dt.tz_convert(UTC7)
+
         return df, content["sha"]
 
-    return init_data(), None
+    else:
+        st.error(f"❌ Load lỗi GitHub: {res.text}")
+        return init_data(), None
 
 # ================= SAVE =================
 def save_data(df, sha):
-    headers = {"Authorization": f"token {GITHUB_TOKEN}"}
+    headers = {
+        "Authorization": f"token {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+
     csv_data = df.to_csv(index=False)
     encoded = base64.b64encode(csv_data.encode()).decode()
 
     payload = {
         "message": "update data",
-        "content": encoded,
-        "sha": sha
+        "content": encoded
     }
 
-    requests.put(API_URL, json=payload, headers=headers)
+    if sha:
+        payload["sha"] = sha
 
+    res = requests.put(API_URL, json=payload, headers=headers)
+
+    if res.status_code in [200, 201]:
+        return res.json()["content"]["sha"]
+    else:
+        st.error(f"❌ Save lỗi: {res.text}")
+        return None
 # ================= TIME BLOCK =================
 def get_block_time(dt):
     if dt.tzinfo is None:
@@ -181,22 +199,19 @@ with col3:
 
 # ================= SAVE BUTTON =================
 if st.button("💾 Save"):
-    # update local state ngay lập tức
     st.session_state.df.loc[idx, "energy"] = energy
     st.session_state.df.loc[idx, "nightmare"] = nightmare
     st.session_state.df.loc[idx, "trial"] = trial
 
-    # save github
-    save_data(st.session_state.df, st.session_state.sha)
+    new_sha = save_data(st.session_state.df, st.session_state.sha)
 
-    # reload lại sha mới (QUAN TRỌNG)
-    new_df, new_sha = load_data()
-    st.session_state.df = new_df
-    st.session_state.sha = new_sha
+    if new_sha:
+        st.session_state.sha = new_sha
+        st.success("✅ Saved GitHub!")
+    else:
+        st.error("❌ Save thất bại!")
 
-    st.success("✅ Saved & synced!")
     st.rerun()
-
 # ================= GLOBAL =================
 st.subheader("🔧 Toàn server")
 
