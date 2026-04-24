@@ -36,8 +36,15 @@ def load_data():
     if res.status_code == 200:
         content = res.json()
         file_data = base64.b64decode(content["content"])
+        
         df = pd.read_csv(pd.io.common.BytesIO(file_data))
+
         df["last_update"] = pd.to_datetime(df["last_update"], errors="coerce")
+
+        if df["last_update"].dt.tz is None:
+           df["last_update"] = df["last_update"].dt.tz_localize(UTC7)
+        else:
+           df["last_update"] = df["last_update"].dt.tz_convert(UTC7)
         return df, content["sha"]
 
     return init_data(), None
@@ -88,7 +95,9 @@ def update_energy(df):
 
         if blocks > 0:
             df.loc[i, "energy"] = min(df.loc[i, "energy"] + blocks * 15, MAX_ENERGY)
-            df.loc[i, "last_update"] = last + pd.Timedelta(hours=blocks * 3)
+            
+            new_time = last + pd.Timedelta(hours=blocks * 3)
+            df.loc[i, "last_update"] = new_time
 
     return df
 
