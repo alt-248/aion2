@@ -31,7 +31,7 @@ def safe_parse_time(col):
     return parsed.dt.tz_convert(UTC7)
 
 def load_data():
-    res = supabase.table("energy_tracker").select("*").execute()
+    res = supabase.table("energy_tracker1").select("*").execute()
     df = pd.DataFrame(res.data)
     df["last_update"] = safe_parse_time(df["last_update"])
     return df
@@ -43,7 +43,7 @@ def load_gear():
 # ================= SAVE =================
 def save_row(row):
     utc_time = row["last_update"].astimezone(timezone.utc)
-    supabase.table("energy_tracker").update({
+    supabase.table("energy_tracker1").update({
         "energy": int(row["energy"]),
         "nightmare": int(row["nightmare"]),
         "trial": int(row["trial"]),
