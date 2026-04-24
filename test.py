@@ -50,8 +50,6 @@ def save_row(row):
         "last_update": utc_time.isoformat()
     }).eq("id", int(row["id"])).execute()
 
-def save_gear(row):
-    supabase.table("gear_tracker").update(row.to_dict()).eq("id", int(row["id"])).execute()
 
 # ================= TIME =================
 def get_block_time(dt):
@@ -186,22 +184,46 @@ if st.button("💾 Save"):
 st.subheader("🛡️ Gear")
 
 gear = st.session_state.gear.copy()
-gear_display = gear.copy()
-gear_display["character"] = gear_display["character"].map(NAME_MAP)
 
-edited_gear = st.data_editor(gear_display, use_container_width=True)
+gear_display = gear.copy()
+gear_display["character"] = gear_display["character"].map(NAME_MAP).fillna(gear_display["character"])
+
+edited_gear = st.data_editor(
+    gear_display,
+    use_container_width=True,
+    disabled=["id"]
+)
+
+# ================= CLEAN =================
+def clean_data(d):
+    clean = {}
+    for k, v in d.items():
+        if pd.isna(v):
+            clean[k] = None
+        elif hasattr(v, "item"):
+            clean[k] = v.item()
+        else:
+            clean[k] = v
+    return clean
 
 # ================= SAVE GEAR =================
+def save_gear(row):
+    data = clean_data(row.to_dict())
+
+    supabase.table("gear_tracker").update(data)\
+        .eq("id", int(data["id"]))\
+        .execute()
+
 if st.button("💾 Save Gear"):
     reverse_map = {v: k for k, v in NAME_MAP.items()}
-    edited_gear["character"] = edited_gear["character"].map(reverse_map)
+
+    edited_gear["character"] = edited_gear["character"].map(reverse_map).fillna(edited_gear["character"])
 
     for i in edited_gear.index:
         save_gear(edited_gear.loc[i])
 
     st.success("Saved Gear!")
     st.rerun()
-
 # ================= ANALYSIS =================
 st.subheader("📊 Phân tích Gear")
 
