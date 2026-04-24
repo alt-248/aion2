@@ -1,250 +1,156 @@
 import streamlit as st
 import pandas as pd
-import requests
-import base64
-from datetime import datetime, timedelta
+from datetime import timezone, timedelta
+from supabase import create_client
 
-# ===== CONFIG =====
+# ================= CONFIG =================
 MAX_ENERGY = 840
 MAX_NIGHTMARE = 14
+UTC7 = timezone(timedelta(hours=7))
 
-REPO = st.secrets.get("GITHUB_REPO", "")
-TOKEN = st.secrets.get("GITHUB_TOKEN", "")
-FILE_PATH = st.secrets.get("GITHUB_FILE", "data.csv")
-
-if not REPO or not TOKEN:
-    st.error("❌ Thiếu cấu hình GitHub")
-    st.stop()
-
-gear_slots = [
-    "weapon","shield","shoulder","gloves","armor","pants",
-    "cloak","boots","earring1","earring2",
-    "necklace","ring1","ring2","bracelet1","bracelet2"
-]
-
-# ===== BUILD =====
-build_suggest = {
-    "Cleric": "Hồi máu + HP + Block",
-    "Chanter": "Buff + Tốc độ + Hybrid",
-    "Templar": "Tank + HP + DEF",
-    "Gladiator": "Crit + ATK",
-    "Ranger": "Crit + Speed",
-    "Sorcerer": "Magic ATK + Crit",
-    "Assassin": "Crit + Speed + Burst",
-    "Elementalist": "Magic DPS + AoE"
+NAME_MAP = {
+    "Cleric": "Buff",
+    "Chanter": "Thương",
+    "Templar": "Kiếm khiên",
+    "Gladiator": "Đại kiếm",
+    "Ranger": "Cung",
+    "Sorcerer": "Sách",
+    "Assassin": "Sát thủ",
+    "Elementalist": "Cầu"
 }
 
-# ===== INIT =====
-def init_data():
-    chars = list(build_suggest.keys())
-    now = datetime.now()
-    data = []
+SUPABASE_URL = st.secrets["SUPABASE_URL"]
+SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-    for c in chars:
-        row = {
-            "character": c,
-            "energy": 0,
-            "nightmare": 0,
-            "trial": 0,
-            "power": 0,
-            "dps": 0,
-            "last_update": now,
-            "last_nm_update": now
-        }
-        for g in gear_slots:
-            row[f"{g}_level"] = 0
-        data.append(row)
+# ================= LOAD =================
+def safe_parse_time(col):
+    parsed = pd.to_datetime(col, errors="coerce", utc=True)
+    now = pd.Timestamp.now(tz=UTC7)
+    parsed = parsed.fillna(now)
+    return parsed.dt.tz_convert(UTC7)
 
-    return pd.DataFrame(data)
-
-# ===== GITHUB =====
-def get_sha():
-    url = f"https://api.github.com/repos/{REPO}/contents/{FILE_PATH}"
-    headers = {"Authorization": f"token {TOKEN}"}
-    r = requests.get(url, headers=headers)
-    return r.json().get("sha") if r.status_code == 200 else None
-
-def save(df):
-    df2 = df.copy()
-    df2["last_update"] = df2["last_update"].astype(str)
-    df2["last_nm_update"] = df2["last_nm_update"].astype(str)
-
-    content = base64.b64encode(df2.to_csv(index=False).encode()).decode()
-    data = {"message":"update","content":content}
-
-    sha = get_sha()
-    if sha:
-        data["sha"] = sha
-
-    url = f"https://api.github.com/repos/{REPO}/contents/{FILE_PATH}"
-    headers = {"Authorization": f"token {TOKEN}"}
-    r = requests.put(url, json=data, headers=headers)
-
-    return r.status_code in [200,201]
-
-# ===== LOAD =====
-@st.cache_data(ttl=5)
-def load():
-    url = f"https://raw.githubusercontent.com/{REPO}/main/{FILE_PATH}"
-    try:
-        df = pd.read_csv(url)
-    except:
-        df = init_data()
-        save(df)
-        return df
-
-    for g in gear_slots:
-        if f"{g}_level" not in df:
-            df[f"{g}_level"] = 0
-
-    df["last_update"] = pd.to_datetime(df["last_update"], errors="coerce")
-    df["last_nm_update"] = pd.to_datetime(df["last_nm_update"], errors="coerce")
-
-    now = datetime.now()
-    df["last_update"] = df["last_update"].fillna(now)
-    df["last_nm_update"] = df["last_nm_update"].fillna(now)
-
+def load_data():
+    res = supabase.table("energy_tracker").select("*").execute()
+    df = pd.DataFrame(res.data)
+    df["last_update"] = safe_parse_time(df["last_update"])
     return df
 
-# ===== LOGIC =====
+def load_gear():
+    res = supabase.table("gear_tracker").select("*").execute()
+    return pd.DataFrame(res.data)
+
+# ================= SAVE =================
+def save_row(row):
+    utc_time = row["last_update"].astimezone(timezone.utc)
+    supabase.table("energy_tracker").update({
+        "energy": int(row["energy"]),
+        "nightmare": int(row["nightmare"]),
+        "trial": int(row["trial"]),
+        "last_update": utc_time.isoformat()
+    }).eq("id", int(row["id"])).execute()
+
+def save_gear(row):
+    supabase.table("gear_tracker").update(row.to_dict()).eq("id", int(row["id"])).execute()
+
+# ================= TIME =================
 def get_block_time(dt):
-    return dt.replace(hour=(dt.hour//3)*3, minute=0, second=0, microsecond=0)
+    dt = dt.astimezone(UTC7)
+    hour_block = (dt.hour // 3) * 3
+    return dt.replace(hour=hour_block, minute=0, second=0, microsecond=0)
 
+# ================= AUTO NIGHTMARE =================
+def auto_nightmare(df):
+    now = pd.Timestamp.now(tz=UTC7)
+    if now.hour == 3 and now.minute < 5:
+        if "last_daily" not in st.session_state:
+            st.session_state.last_daily = now.date()
+
+        if st.session_state.last_daily != now.date():
+            df["nightmare"] = (df["nightmare"] + 2).clip(upper=MAX_NIGHTMARE)
+            st.session_state.last_daily = now.date()
+
+            for i in df.index:
+                save_row(df.loc[i])
+
+    return df
+
+# ================= ENERGY =================
 def update_energy(df):
-    now = get_block_time(datetime.now())
+    now = pd.Timestamp.now(tz=UTC7)
+    now_block = get_block_time(now)
 
     for i in df.index:
-        last = df.loc[i,"last_update"]
-        diff = int((now-last).total_seconds()//3600)//3
+        last = get_block_time(df.loc[i, "last_update"])
+        diff_hours = int((now_block - last).total_seconds() // 3600)
+        blocks = diff_hours // 3
 
-        if diff > 0:
-            df.at[i,"energy"] = min(df.loc[i,"energy"]+diff*15, MAX_ENERGY)
-            df.at[i,"last_update"] = last + timedelta(hours=diff*3)
-
-    return df
-
-def update_nm(df):
-    now = datetime.now().replace(hour=0,minute=0,second=0,microsecond=0)
-
-    for i in df.index:
-        last = df.loc[i,"last_nm_update"]
-        days = (now-last.replace(hour=0,minute=0,second=0,microsecond=0)).days
-
-        if days > 0:
-            df.at[i,"nightmare"] = min(df.loc[i,"nightmare"]+days*2, MAX_NIGHTMARE)
-            df.at[i,"last_nm_update"] = now
+        if blocks > 0:
+            df.loc[i, "energy"] = min(df.loc[i, "energy"] + blocks * 15, MAX_ENERGY)
+            df.loc[i, "last_update"] = last + pd.Timedelta(hours=blocks * 3)
 
     return df
 
-def calc_score(df):
-    df["gear_score"] = df[[f"{g}_level" for g in gear_slots]].sum(axis=1)
-    return df
+# ================= HIGHLIGHT =================
+def highlight(df):
+    style = pd.DataFrame("", index=df.index, columns=df.columns)
+    style["energy"] = df["energy"].apply(lambda v: "background:red;color:white" if v>=MAX_ENERGY else ("background:yellow" if v>=0.8*MAX_ENERGY else ""))
+    style["nightmare"] = df["nightmare"].apply(lambda v: "background:red;color:white" if v>=MAX_NIGHTMARE else ("background:yellow" if v>=0.8*MAX_NIGHTMARE else ""))
+    return style
 
-# ===== UI =====
-st.title("⚡ Quản Lý Energy PRO")
+# ================= INIT =================
+if "df" not in st.session_state:
+    st.session_state.df = load_data()
+    st.session_state.gear = load_gear()
 
-df = load()
+# ================= APP =================
+st.title("⚡ Energy Tracker PRO")
+
+df = st.session_state.df
 df = update_energy(df)
-df = update_nm(df)
-df = calc_score(df)
+df = auto_nightmare(df)
 
-# ===== ALERT GỘP =====
-full_energy = []
-warn_energy = []
-full_nm = []
+# ================= TABLE =================
+df_display = df.copy()
+df_display["character"] = df_display["character"].map(NAME_MAP)
+df_display = df_display.drop(columns=["id","last_update"])
 
-for i in df.index:
-    char = df.loc[i,"character"]
-    e = df.loc[i,"energy"]
-    nm = df.loc[i,"nightmare"]
+st.dataframe(df_display.style.apply(lambda x: highlight(df), axis=None), use_container_width=True)
 
-    if e >= MAX_ENERGY:
-        full_energy.append(char)
-    elif e >= MAX_ENERGY*0.8:
-        warn_energy.append(char)
+# ================= GEAR =================
+st.subheader("🛡️ Gear")
 
-    if nm >= MAX_NIGHTMARE:
-        full_nm.append(char)
+gear = st.session_state.gear
+gear["character"] = gear["character"].map(NAME_MAP)
 
-if full_energy:
-    st.error("🔴 Full Energy: " + ", ".join(full_energy))
+st.data_editor(gear, use_container_width=True)
 
-if warn_energy:
-    st.warning("🟡 Sắp Full Energy: " + ", ".join(warn_energy))
+# ================= ANALYSIS =================
+st.subheader("📊 Phân tích Gear")
 
-if full_nm:
-    st.error("👻 Full Nightmare: " + ", ".join(full_nm))
+gear_numeric = gear.drop(columns=["id","character"]).fillna(0)
 
-# ===== TABLE =====
-st.subheader("📊 Bảng Energy")
-st.dataframe(df[["character","energy","nightmare","trial"]])
+avg = gear_numeric.mean()
 
-# ===== SELECT =====
-idx = st.selectbox("Chọn nhân vật", df.index, format_func=lambda x: df.loc[x,"character"])
+weak_chars = []
+for i,row in gear_numeric.iterrows():
+    if (row < avg*0.8).sum() > 5:
+        weak_chars.append(gear.loc[i,"character"])
 
-# ===== UPDATE =====
-st.subheader("Cập nhật")
+if weak_chars:
+    st.warning(f"⚠️ Gear yếu: {', '.join(weak_chars)}")
 
-col1,col2,col3 = st.columns(3)
+# ================= RANK =================
+st.subheader("🏆 Ranking")
 
-use_energy = col1.checkbox("Energy")
-use_nm = col2.checkbox("Nightmare")
-use_trial = col3.checkbox("Trial")
+gear["score"] = gear_numeric.sum() + gear_numeric["dps"].fillna(0)
+rank = gear.sort_values("score", ascending=False)
 
-if use_energy:
-    val_energy = st.number_input("Energy",0,MAX_ENERGY,int(df.loc[idx,"energy"]))
-if use_nm:
-    val_nm = st.number_input("Nightmare",0,MAX_NIGHTMARE,int(df.loc[idx,"nightmare"]))
-if use_trial:
-    val_trial = st.number_input("Trial",0,10,int(df.loc[idx,"trial"]))
+st.dataframe(rank[["character","score","dps"]], use_container_width=True)
 
-if st.button("💾 Lưu cập nhật"):
-    if use_energy:
-        df.loc[idx,"energy"] = val_energy
-        df.loc[idx,"last_update"] = get_block_time(datetime.now())
-    if use_nm:
-        df.loc[idx,"nightmare"] = val_nm
-    if use_trial:
-        df.loc[idx,"trial"] = val_trial
-
-    if save(df):
-        st.success("Đã lưu!")
-        st.cache_data.clear()
-        st.rerun()
-
-# ===== GEAR TABLE =====
-st.subheader("🛡 Bảng Trang Bị")
-gear_df = df[["character","power","dps"] + [f"{g}_level" for g in gear_slots]]
-st.dataframe(gear_df)
-
-# ===== EDIT GEAR =====
-st.subheader("⚙️ Chỉnh Trang Bị")
-
-power = st.number_input("Lực chiến",0,999999,int(df.loc[idx,"power"]))
-dps = st.number_input("DPS",0,999999,int(df.loc[idx,"dps"]))
-
-gear_inputs = {}
-for g in gear_slots:
-    gear_inputs[g] = st.number_input(g,0,9999,int(df.loc[idx,f"{g}_level"]))
-
-if st.button("💾 Lưu Trang Bị"):
-    for g,v in gear_inputs.items():
-        df.loc[idx,f"{g}_level"] = v
-
-    df.loc[idx,"power"] = power
-    df.loc[idx,"dps"] = dps
-
-    if save(df):
-        st.success("Đã lưu gear!")
-        st.cache_data.clear()
-        st.rerun()
-
-# ===== BUILD =====
-st.subheader("🧠 Gợi ý build")
-char = df.loc[idx,"character"]
-st.info(f"{char}: {build_suggest.get(char,'')}")
-
-# ===== RANK =====
-st.subheader("🏆 Xếp hạng")
-rank = df.sort_values(["power","dps","gear_score"],ascending=False)
-st.dataframe(rank[["character","power","dps","gear_score"]])
+# ================= SAVE GEAR =================
+if st.button("💾 Save Gear"):
+    for i in st.session_state.gear.index:
+        save_gear(st.session_state.gear.loc[i])
+    st.success("Saved Gear!")
+    st.rerun()
