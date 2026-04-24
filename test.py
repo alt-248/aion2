@@ -89,17 +89,19 @@ def check_alert(df):
 def highlight(df):
     style = pd.DataFrame("", index=df.index, columns=df.columns)
 
-    style["energy"] = df["energy"].apply(
-        lambda v: "background:red;color:white"
-        if v >= MAX_ENERGY else
-        ("background:yellow" if v >= MAX_ENERGY*0.8 else "")
-    )
+    if "energy" in df.columns:
+        style["energy"] = df["energy"].apply(
+            lambda v: "background:red;color:white"
+            if v >= MAX_ENERGY else
+            ("background:yellow" if v >= MAX_ENERGY*0.8 else "")
+        )
 
-    style["nightmare"] = df["nightmare"].apply(
-        lambda v: "background:red;color:white"
-        if v >= MAX_NIGHTMARE else
-        ("background:yellow" if v >= MAX_NIGHTMARE*0.8 else "")
-    )
+    if "nightmare" in df.columns:
+        style["nightmare"] = df["nightmare"].apply(
+            lambda v: "background:red;color:white"
+            if v >= MAX_NIGHTMARE else
+            ("background:yellow" if v >= MAX_NIGHTMARE*0.8 else "")
+        )
 
     return style
 
@@ -111,9 +113,8 @@ if "df" not in st.session_state:
 # ================= APP =================
 st.title("⚡ Energy Tracker PRO")
 
-# update energy
+# FIX: luôn lưu lại session
 st.session_state.df = update_energy(st.session_state.df)
-
 df = st.session_state.df
 
 # ================= ALERT =================
@@ -131,9 +132,12 @@ if warn_n:
 # ================= TABLE =================
 df_display = df.copy()
 df_display["character"] = df_display["character"].map(NAME_MAP)
-df_display = df_display.drop(columns=["id","last_update"])
+df_display = df_display.drop(columns=["id", "last_update"])
 
-st.dataframe(df_display.style.apply(lambda x: highlight(df), axis=None), use_container_width=True)
+st.dataframe(
+    df_display.style.apply(lambda x: highlight(df_display), axis=None),
+    use_container_width=True
+)
 
 # ================= SELECT + INPUT =================
 st.subheader("🎮 Chọn nhân vật")
@@ -192,13 +196,13 @@ if st.button("💾 Save Gear"):
 # ================= ANALYSIS =================
 st.subheader("📊 Phân tích Gear")
 
-gear_numeric = edited_gear.drop(columns=["id","character"]).fillna(0)
+gear_numeric = edited_gear.drop(columns=["id", "character"]).fillna(0)
 avg = gear_numeric.mean()
 
 weak_chars = []
-for i,row in gear_numeric.iterrows():
+for i, row in gear_numeric.iterrows():
     if (row < avg*0.8).sum() > 5:
-        weak_chars.append(edited_gear.loc[i,"character"])
+        weak_chars.append(edited_gear.loc[i, "character"])
 
 if weak_chars:
     st.warning(f"⚠️ Gear yếu: {', '.join(weak_chars)}")
@@ -209,4 +213,4 @@ st.subheader("🏆 Ranking")
 edited_gear["score"] = gear_numeric.sum() + gear_numeric["dps"]
 rank = edited_gear.sort_values("score", ascending=False)
 
-st.dataframe(rank[["character","score","dps"]], use_container_width=True)
+st.dataframe(rank[["character", "score", "dps"]], use_container_width=True)
