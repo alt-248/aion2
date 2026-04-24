@@ -75,23 +75,31 @@ def update_energy(df):
 
     return df
 
+# ================= ALERT =================
+def check_alert(df):
+    full_e = df[df["energy"] >= MAX_ENERGY]["character"].map(NAME_MAP).tolist()
+    warn_e = df[(df["energy"] >= MAX_ENERGY*0.8) & (df["energy"] < MAX_ENERGY)]["character"].map(NAME_MAP).tolist()
+
+    full_n = df[df["nightmare"] >= MAX_NIGHTMARE]["character"].map(NAME_MAP).tolist()
+    warn_n = df[(df["nightmare"] >= MAX_NIGHTMARE*0.8) & (df["nightmare"] < MAX_NIGHTMARE)]["character"].map(NAME_MAP).tolist()
+
+    return full_e, warn_e, full_n, warn_n
+
 # ================= HIGHLIGHT =================
 def highlight(df):
     style = pd.DataFrame("", index=df.index, columns=df.columns)
 
-    if "energy" in df.columns:
-        style["energy"] = df["energy"].apply(
-            lambda v: "background:red;color:white"
-            if v >= MAX_ENERGY else
-            ("background:yellow" if v >= MAX_ENERGY*0.8 else "")
-        )
+    style["energy"] = df["energy"].apply(
+        lambda v: "background:red;color:white"
+        if v >= MAX_ENERGY else
+        ("background:yellow" if v >= MAX_ENERGY*0.8 else "")
+    )
 
-    if "nightmare" in df.columns:
-        style["nightmare"] = df["nightmare"].apply(
-            lambda v: "background:red;color:white"
-            if v >= MAX_NIGHTMARE else
-            ("background:yellow" if v >= MAX_NIGHTMARE*0.8 else "")
-        )
+    style["nightmare"] = df["nightmare"].apply(
+        lambda v: "background:red;color:white"
+        if v >= MAX_NIGHTMARE else
+        ("background:yellow" if v >= MAX_NIGHTMARE*0.8 else "")
+    )
 
     return style
 
@@ -103,21 +111,68 @@ if "df" not in st.session_state:
 # ================= APP =================
 st.title("⚡ Energy Tracker PRO")
 
-df = update_energy(st.session_state.df)
+# update energy
+st.session_state.df = update_energy(st.session_state.df)
+
+df = st.session_state.df
+
+# ================= ALERT =================
+full_e, warn_e, full_n, warn_n = check_alert(df)
+
+if full_e:
+    st.error(f"🔥 Full Energy: {', '.join(full_e)}")
+if warn_e:
+    st.warning(f"⚠️ Energy 80%+: {', '.join(warn_e)}")
+if full_n:
+    st.error(f"💀 Full Nightmare: {', '.join(full_n)}")
+if warn_n:
+    st.warning(f"⚠️ Nightmare 80%+: {', '.join(warn_n)}")
 
 # ================= TABLE =================
 df_display = df.copy()
 df_display["character"] = df_display["character"].map(NAME_MAP)
 df_display = df_display.drop(columns=["id","last_update"])
 
-st.dataframe(df_display.style.apply(lambda x: highlight(df_display), axis=None), use_container_width=True)
+st.dataframe(df_display.style.apply(lambda x: highlight(df), axis=None), use_container_width=True)
+
+# ================= SELECT + INPUT =================
+st.subheader("🎮 Chọn nhân vật")
+
+idx = st.selectbox(
+    "Character",
+    df.index,
+    format_func=lambda x: NAME_MAP[df.loc[x, "character"]]
+)
+
+row = df.loc[idx]
+
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    energy = st.number_input("Energy", 0, MAX_ENERGY, int(row["energy"]))
+
+with col2:
+    nightmare = st.number_input("Nightmare", 0, MAX_NIGHTMARE, int(row["nightmare"]))
+
+with col3:
+    trial = st.number_input("Trial", 0, 10, int(row["trial"]))
+
+# ================= SAVE =================
+if st.button("💾 Save"):
+    df.loc[idx, "energy"] = energy
+    df.loc[idx, "nightmare"] = nightmare
+    df.loc[idx, "trial"] = trial
+    df.loc[idx, "last_update"] = get_block_time(pd.Timestamp.now(tz=UTC7))
+
+    save_row(df.loc[idx])
+
+    st.success("✅ Saved!")
+    st.rerun()
 
 # ================= GEAR =================
 st.subheader("🛡️ Gear")
 
 gear = st.session_state.gear.copy()
-
-# chỉ map để HIỂN THỊ
 gear_display = gear.copy()
 gear_display["character"] = gear_display["character"].map(NAME_MAP)
 
@@ -125,7 +180,6 @@ edited_gear = st.data_editor(gear_display, use_container_width=True)
 
 # ================= SAVE GEAR =================
 if st.button("💾 Save Gear"):
-    # map ngược lại trước khi save
     reverse_map = {v: k for k, v in NAME_MAP.items()}
     edited_gear["character"] = edited_gear["character"].map(reverse_map)
 
