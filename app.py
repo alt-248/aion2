@@ -18,24 +18,26 @@ def load_data():
     res = supabase.table("energy_tracker").select("*").execute()
     df = pd.DataFrame(res.data)
 
+    # convert từ UTC -> UTC+7
     df["last_update"] = pd.to_datetime(df["last_update"], utc=True).dt.tz_convert(UTC7)
+
     return df
 
 # ================= SAVE =================
 def save_row(row):
+    # convert ngược lại về UTC trước khi save
+    utc_time = row["last_update"].astimezone(timezone.utc)
+
     supabase.table("energy_tracker").update({
         "energy": int(row["energy"]),
         "nightmare": int(row["nightmare"]),
         "trial": int(row["trial"]),
-        "last_update": row["last_update"].isoformat()
+        "last_update": utc_time.isoformat()
     }).eq("id", int(row["id"])).execute()
 
 # ================= TIME =================
 def get_block_time(dt):
-    if dt.tzinfo is None:
-        dt = dt.tz_localize(UTC7)
-    else:
-        dt = dt.tz_convert(UTC7)
+    dt = dt.astimezone(UTC7)
 
     hour_block = (dt.hour // 3) * 3
     return dt.replace(hour=hour_block, minute=0, second=0, microsecond=0)
@@ -48,11 +50,18 @@ def update_energy(df):
     for i in df.index:
         last = df.loc[i, "last_update"]
 
+        # đảm bảo cùng timezone
+        last = last.astimezone(UTC7)
+
         diff_hours = int((now_block - last).total_seconds() // 3600)
         blocks = diff_hours // 3
 
         if blocks > 0:
-            df.loc[i, "energy"] = min(df.loc[i, "energy"] + blocks * 15, MAX_ENERGY)
+            df.loc[i, "energy"] = min(
+                df.loc[i, "energy"] + blocks * 15,
+                MAX_ENERGY
+            )
+
             df.loc[i, "last_update"] = last + pd.Timedelta(hours=blocks * 3)
 
     return df
@@ -95,7 +104,7 @@ if "df" not in st.session_state:
 
 # ================= APP =================
 st.set_page_config(page_title="Energy Tracker PRO", layout="wide")
-st.title("⚡ Energy Tracker PRO (Supabase)")
+st.title("⚡ Energy Tracker PRO (Supabase FIXED)")
 
 # update energy
 st.session_state.df = update_energy(st.session_state.df)
@@ -119,12 +128,9 @@ if warn_n:
 st.subheader("📊 Bảng dữ liệu")
 
 styled_df = st.session_state.df.style.apply(lambda x: highlight_status(st.session_state.df), axis=None)
-
 st.dataframe(styled_df, use_container_width=True)
 
 # ================= SELECT =================
-st.subheader("🎮 Chọn nhân vật")
-
 idx = st.selectbox(
     "Character",
     st.session_state.df.index,
@@ -154,31 +160,4 @@ if st.button("💾 Save"):
     save_row(st.session_state.df.loc[idx])
 
     st.success("✅ Saved!")
-    st.rerun()
-
-# ================= GLOBAL =================
-st.subheader("🔧 Toàn server")
-
-if st.button("🔁 Reset Trial = 3"):
-    st.session_state.df["trial"] = 3
-    for i in st.session_state.df.index:
-        save_row(st.session_state.df.loc[i])
-    st.rerun()
-
-if st.button("⚔️ +2 Nightmare"):
-    st.session_state.df["nightmare"] = (
-        st.session_state.df["nightmare"] + 2
-    ).clip(upper=MAX_NIGHTMARE)
-
-    for i in st.session_state.df.index:
-        save_row(st.session_state.df.loc[i])
-    st.rerun()
-
-# ================= ENERGY =================
-if st.button("⚡ Update Energy Now"):
-    st.session_state.df = update_energy(st.session_state.df)
-
-    for i in st.session_state.df.index:
-        save_row(st.session_state.df.loc[i])
-
     st.rerun()
