@@ -65,15 +65,24 @@ def update_energy(df):
     now_block = get_block_time(now)
 
     for i in df.index:
-        last = get_block_time(df.loc[i, "last_update"])
-        diff_hours = int((now_block - last).total_seconds() // 3600)
+        last = df.loc[i, "last_update"]
+
+        last_block = get_block_time(last)
+
+        diff_hours = int((now_block - last_block).total_seconds() // 3600)
         blocks = diff_hours // 3
 
         if blocks > 0:
-            df.loc[i, "energy"] = min(df.loc[i, "energy"] + blocks * 15, MAX_ENERGY)
-            df.loc[i, "last_update"] = last + pd.Timedelta(hours=blocks * 3)
+            df.loc[i, "energy"] = min(
+                df.loc[i, "energy"] + blocks * 15,
+                MAX_ENERGY
+            )
+
+            # FIX QUAN TRỌNG: luôn snap về block
+            df.loc[i, "last_update"] = last_block + pd.Timedelta(hours=blocks * 3)
 
     return df
+
 
 # ================= ALERT =================
 def check_alert(df):
