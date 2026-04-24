@@ -18,14 +18,11 @@ def load_data():
     res = supabase.table("energy_tracker").select("*").execute()
     df = pd.DataFrame(res.data)
 
-    # convert từ UTC -> UTC+7
     df["last_update"] = pd.to_datetime(df["last_update"], utc=True).dt.tz_convert(UTC7)
-
     return df
 
 # ================= SAVE =================
 def save_row(row):
-    # convert ngược lại về UTC trước khi save
     utc_time = row["last_update"].astimezone(timezone.utc)
 
     supabase.table("energy_tracker").update({
@@ -38,7 +35,6 @@ def save_row(row):
 # ================= TIME =================
 def get_block_time(dt):
     dt = dt.astimezone(UTC7)
-
     hour_block = (dt.hour // 3) * 3
     return dt.replace(hour=hour_block, minute=0, second=0, microsecond=0)
 
@@ -50,10 +46,9 @@ def update_energy(df):
     for i in df.index:
         last = df.loc[i, "last_update"]
 
-        # đảm bảo cùng timezone
-        last = last.astimezone(UTC7)
+        last_block = get_block_time(last)
 
-        diff_hours = int((now_block - last).total_seconds() // 3600)
+        diff_hours = int((now_block - last_block).total_seconds() // 3600)
         blocks = diff_hours // 3
 
         if blocks > 0:
@@ -62,7 +57,8 @@ def update_energy(df):
                 MAX_ENERGY
             )
 
-            df.loc[i, "last_update"] = last + pd.Timedelta(hours=blocks * 3)
+            # FIX QUAN TRỌNG: luôn snap về block
+            df.loc[i, "last_update"] = last_block + pd.Timedelta(hours=blocks * 3)
 
     return df
 
@@ -157,7 +153,37 @@ if st.button("💾 Save"):
     st.session_state.df.loc[idx, "nightmare"] = nightmare
     st.session_state.df.loc[idx, "trial"] = trial
 
+    # FIX QUAN TRỌNG: snap time khi save
+    st.session_state.df.loc[idx, "last_update"] = get_block_time(pd.Timestamp.now(tz=UTC7))
+
     save_row(st.session_state.df.loc[idx])
 
     st.success("✅ Saved!")
+    st.rerun()
+
+# ================= GLOBAL =================
+st.subheader("🔧 Toàn server")
+
+if st.button("🔁 Reset Trial = 3"):
+    st.session_state.df["trial"] = 3
+    for i in st.session_state.df.index:
+        save_row(st.session_state.df.loc[i])
+    st.rerun()
+
+if st.button("⚔️ +2 Nightmare"):
+    st.session_state.df["nightmare"] = (
+        st.session_state.df["nightmare"] + 2
+    ).clip(upper=MAX_NIGHTMARE)
+
+    for i in st.session_state.df.index:
+        save_row(st.session_state.df.loc[i])
+    st.rerun()
+
+# ================= ENERGY =================
+if st.button("⚡ Update Energy Now"):
+    st.session_state.df = update_energy(st.session_state.df)
+
+    for i in st.session_state.df.index:
+        save_row(st.session_state.df.loc[i])
+
     st.rerun()
