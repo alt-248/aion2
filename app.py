@@ -103,12 +103,6 @@ st.session_state.df = update_energy(st.session_state.df)
 # ================= ALERT =================
 full_e, warn_e, full_n, warn_n = check_alert(st.session_state.df)
 
-if full_e or full_n:
-    st.error("🔥 Có nhân vật FULL!")
-
-if warn_e or warn_n:
-    st.warning("⚠️ Sắp đầy (>=80%)")
-
 if full_e:
     st.error(f"⚡ Full Energy: {', '.join(full_e)}")
 
