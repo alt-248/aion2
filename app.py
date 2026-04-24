@@ -1,87 +1,40 @@
 import streamlit as st
 import pandas as pd
-import requests
-import base64
 from datetime import timezone, timedelta
+from supabase import create_client
 
 # ================= CONFIG =================
 MAX_ENERGY = 840
 MAX_NIGHTMARE = 14
 UTC7 = timezone(timedelta(hours=7))
 
-GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]
-GITHUB_REPO = st.secrets["GITHUB_REPO"]
-GITHUB_FILE = st.secrets["GITHUB_FILE"]
+SUPABASE_URL = st.secrets["SUPABASE_URL"]
+SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 
-API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{GITHUB_FILE}"
-
-# ================= INIT =================
-def init_data():
-    return pd.DataFrame({
-        "character": [
-            "Cleric", "Chanter", "Templar", "Gladiator",
-            "Ranger", "Sorcerer", "Assassin", "Elementalist"
-        ],
-        "nightmare": [0]*8,
-        "trial": [0]*8,
-        "energy": [0]*8,
-        "last_update": [pd.Timestamp.now(tz=UTC7)]*8
-    })
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # ================= LOAD =================
 def load_data():
-    headers = {
-        "Authorization": f"token {GITHUB_TOKEN}",
-        "Accept": "application/vnd.github.v3+json"
-    }
+    res = supabase.table("energy_tracker").select("*").execute()
+    df = pd.DataFrame(res.data)
 
-    res = requests.get(API_URL, headers=headers)
+    if df.empty:
+        st.error("❌ Không có dữ liệu trong Supabase")
+        return pd.DataFrame()
 
-    if res.status_code == 200:
-        content = res.json()
-        file_data = base64.b64decode(content["content"])
-
-        df = pd.read_csv(pd.io.common.BytesIO(file_data))
-
-        df["last_update"] = pd.to_datetime(df["last_update"], errors="coerce")
-
-        if df["last_update"].dt.tz is None:
-            df["last_update"] = df["last_update"].dt.tz_localize(UTC7)
-        else:
-            df["last_update"] = df["last_update"].dt.tz_convert(UTC7)
-
-        return df, content["sha"]
-
-    else:
-        st.error(f"❌ Load lỗi GitHub: {res.text}")
-        return init_data(), None
+    df["last_update"] = pd.to_datetime(df["last_update"], utc=True).dt.tz_convert(UTC7)
+    return df
 
 # ================= SAVE =================
-def save_data(df, sha):
-    headers = {
-        "Authorization": f"token {GITHUB_TOKEN}",
-        "Accept": "application/vnd.github.v3+json"
-    }
+def save_row(row):
+    supabase.table("energy_tracker").update({
+        "energy": int(row["energy"]),
+        "nightmare": int(row["nightmare"]),
+        "trial": int(row["trial"]),
+        "last_update": row["last_update"].isoformat()
+    }).eq("id", int(row["id"])).execute()
 
-    csv_data = df.to_csv(index=False)
-    encoded = base64.b64encode(csv_data.encode()).decode()
-
-    payload = {
-        "message": "update data",
-        "content": encoded
-    }
-
-    if sha:
-        payload["sha"] = sha
-
-    res = requests.put(API_URL, json=payload, headers=headers)
-
-    if res.status_code in [200, 201]:
-        return res.json()["content"]["sha"]
-    else:
-        st.error(f"❌ Save lỗi: {res.text}")
-        return None
-# ================= TIME BLOCK =================
+# ================= ENERGY =================
 def get_block_time(dt):
     if dt.tzinfo is None:
         dt = dt.tz_localize(UTC7)
@@ -91,163 +44,82 @@ def get_block_time(dt):
     hour_block = (dt.hour // 3) * 3
     return dt.replace(hour=hour_block, minute=0, second=0, microsecond=0)
 
-# ================= ENERGY =================
 def update_energy(df):
     now = pd.Timestamp.now(tz=UTC7)
     now_block = get_block_time(now)
 
     for i in df.index:
-        last = pd.to_datetime(df.loc[i, "last_update"], errors="coerce")
-
-        if pd.isna(last):
-            df.loc[i, "last_update"] = now_block
-            continue
-
-        if last.tzinfo is None:
-            last = last.tz_localize(UTC7)
-        else:
-            last = last.tz_convert(UTC7)
+        last = df.loc[i, "last_update"]
 
         diff_hours = int((now_block - last).total_seconds() // 3600)
         blocks = diff_hours // 3
 
         if blocks > 0:
             df.loc[i, "energy"] = min(df.loc[i, "energy"] + blocks * 15, MAX_ENERGY)
-            
-            new_time = last + pd.Timedelta(hours=blocks * 3)
-            df.loc[i, "last_update"] = new_time
+            df.loc[i, "last_update"] = last + pd.Timedelta(hours=blocks * 3)
 
     return df
 
-# ================= ALERT =================
-def check_alert(df):
-    full_energy = df[df["energy"] >= MAX_ENERGY]["character"].tolist()
-    full_nightmare = df[df["nightmare"] >= MAX_NIGHTMARE]["character"].tolist()
-    return full_energy, full_nightmare
-
-# ================= HIGHLIGHT =================
-def highlight_status(df):
-    def color_energy(val):
-        if val >= MAX_ENERGY:
-            return "background-color: red; color: white"
-        elif val >= MAX_ENERGY * 0.8:
-            return "background-color: yellow"
-        return ""
-
-    def color_nightmare(val):
-        if val >= MAX_NIGHTMARE:
-            return "background-color: red; color: white"
-        elif val >= MAX_NIGHTMARE * 0.8:
-            return "background-color: yellow"
-        return ""
-
-    style = pd.DataFrame("", index=df.index, columns=df.columns)
-    style["energy"] = df["energy"].apply(color_energy)
-    style["nightmare"] = df["nightmare"].apply(color_nightmare)
-    return style
-
-# ================= INIT SESSION =================
+# ================= INIT =================
 if "df" not in st.session_state:
-    df, sha = load_data()
-    st.session_state.df = df
-    st.session_state.sha = sha
+    st.session_state.df = load_data()
 
 # ================= APP =================
-st.set_page_config(page_title="Energy Tracker PRO", layout="wide")
-st.title("⚡ Energy Tracker PRO (GitHub Sync)")
+st.title("⚡ Energy Tracker (Supabase)")
 
-# luôn update energy trước khi hiển thị
+# update energy mỗi lần load
 st.session_state.df = update_energy(st.session_state.df)
 
-# ================= ALERT =================
-full_energy, full_nightmare = check_alert(st.session_state.df)
-
-if full_energy or full_nightmare:
-    st.warning("⚠️ Cảnh báo trạng thái đầy!")
-
-if full_energy:
-    st.error(f"🔥 Full Energy: {', '.join(full_energy)}")
-
-if full_nightmare:
-    st.error(f"💀 Full Nightmare: {', '.join(full_nightmare)}")
-
-# ================= TABLE =================
-st.subheader("📊 Bảng dữ liệu")
-styled_df = st.session_state.df.style.apply(lambda x: highlight_status(st.session_state.df), axis=None)
-st.dataframe(styled_df, use_container_width=True)
+st.dataframe(st.session_state.df, use_container_width=True)
 
 # ================= SELECT =================
-st.subheader("🎮 Chọn nhân vật")
-
 idx = st.selectbox(
     "Character",
     st.session_state.df.index,
     format_func=lambda x: st.session_state.df.loc[x, "character"]
 )
 
-# ================= INPUT =================
-col1, col2, col3 = st.columns(3)
+row = st.session_state.df.loc[idx]
 
-with col1:
-    energy = st.number_input("Energy", 0, MAX_ENERGY, int(st.session_state.df.loc[idx, "energy"]))
+energy = st.number_input("Energy", 0, MAX_ENERGY, int(row["energy"]))
+nightmare = st.number_input("Nightmare", 0, MAX_NIGHTMARE, int(row["nightmare"]))
+trial = st.number_input("Trial", 0, 10, int(row["trial"]))
 
-with col2:
-    nightmare = st.number_input("Nightmare", 0, MAX_NIGHTMARE, int(st.session_state.df.loc[idx, "nightmare"]))
-
-with col3:
-    trial = st.number_input("Trial", 0, 10, int(st.session_state.df.loc[idx, "trial"]))
-
-# ================= SAVE BUTTON =================
+# ================= SAVE =================
 if st.button("💾 Save"):
     st.session_state.df.loc[idx, "energy"] = energy
     st.session_state.df.loc[idx, "nightmare"] = nightmare
     st.session_state.df.loc[idx, "trial"] = trial
 
-    new_sha = save_data(st.session_state.df, st.session_state.sha)
+    save_row(st.session_state.df.loc[idx])
 
-    if new_sha:
-        st.session_state.sha = new_sha
-        st.success("✅ Saved GitHub!")
-    else:
-        st.error("❌ Save thất bại!")
-
+    st.success("✅ Saved to Supabase!")
     st.rerun()
+
 # ================= GLOBAL =================
 st.subheader("🔧 Toàn server")
 
-c1, c2 = st.columns(2)
+if st.button("🔁 Reset Trial = 3"):
+    st.session_state.df["trial"] = 3
+    for i in st.session_state.df.index:
+        save_row(st.session_state.df.loc[i])
+    st.rerun()
 
-with c1:
-    if st.button("🔁 Reset Trial = 3"):
-        st.session_state.df["trial"] = 3
-        save_data(st.session_state.df, st.session_state.sha)
+if st.button("⚔️ +2 Nightmare"):
+    st.session_state.df["nightmare"] = (
+        st.session_state.df["nightmare"] + 2
+    ).clip(upper=MAX_NIGHTMARE)
 
-        new_df, new_sha = load_data()
-        st.session_state.df = new_df
-        st.session_state.sha = new_sha
+    for i in st.session_state.df.index:
+        save_row(st.session_state.df.loc[i])
 
-        st.rerun()
+    st.rerun()
 
-with c2:
-    if st.button("⚔️ +2 Nightmare"):
-        st.session_state.df["nightmare"] = (st.session_state.df["nightmare"] + 2).clip(upper=MAX_NIGHTMARE)
-        save_data(st.session_state.df, st.session_state.sha)
-
-        new_df, new_sha = load_data()
-        st.session_state.df = new_df
-        st.session_state.sha = new_sha
-
-        st.rerun()
-
-# ================= MANUAL ENERGY =================
-st.subheader("⚡ Energy System")
-
-if st.button("Update Energy Now"):
+# ================= ENERGY =================
+if st.button("⚡ Update Energy Now"):
     st.session_state.df = update_energy(st.session_state.df)
-    save_data(st.session_state.df, st.session_state.sha)
 
-    new_df, new_sha = load_data()
-    st.session_state.df = new_df
-    st.session_state.sha = new_sha
+    for i in st.session_state.df.index:
+        save_row(st.session_state.df.loc[i])
 
     st.rerun()
