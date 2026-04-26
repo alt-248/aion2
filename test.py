@@ -85,7 +85,34 @@ def update_energy(df):
             df.loc[i, "last_update"] = last_block + pd.Timedelta(hours=blocks * 3)
 
     return df
+# ================= HIGHLIGHT =================
+def highlight_energy(df):
+    style = pd.DataFrame("", index=df.index, columns=df.columns)
 
+    if "energy" in df.columns:
+        style["energy"] = df["energy"].apply(
+            lambda v: "background-color:red;color:white"
+            if v >= MAX_ENERGY else
+            "background-color:yellow" if v >= MAX_ENERGY*0.8 else ""
+        )
+
+    if "nightmare" in df.columns:
+        style["nightmare"] = df["nightmare"].apply(
+            lambda v: "background-color:red;color:white"
+            if v >= MAX_NIGHTMARE else
+            "background-color:yellow" if v >= MAX_NIGHTMARE*0.8 else ""
+        )
+
+    return style
+# ================= TABLE =================
+display_df = st.session_state.df.drop(columns=["id","last_update"], errors="ignore")
+
+styled_df = display_df.style.apply(
+    lambda x: highlight_energy(display_df),
+    axis=None
+)
+
+st.dataframe(styled_df, use_container_width=True)
 # ================= AUTO SYSTEM =================
 def auto_system(df):
     state = load_system_state()
