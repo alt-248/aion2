@@ -338,12 +338,12 @@ def highlight_gear_display(df_calc, df_display):
 
     return style
 
-    styled = display_gear_df.style.apply(
-        lambda x: highlight_gear_display(calc_df, display_gear_df),
-        axis=None
-    )
+styled = display_gear_df.style.apply(
+    lambda x: highlight_gear_display(calc_df, display_gear_df),
+    axis=None
+)
 
-    st.dataframe(styled, use_container_width=True)
+st.dataframe(styled, use_container_width=True)
 
 # ================= RANKING =================
 st.subheader("🏆 Ranking")
