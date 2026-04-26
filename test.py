@@ -349,18 +349,50 @@ st.dataframe(styled, use_container_width=True)
 st.subheader("🏆 Ranking")
 
 if not gear_df.empty:
-    gear_df["gear_score"] = gear_df.apply(calc_gear_score, axis=1)
+
+    # ===== DATA TÍNH =====
+    calc_df = gear_df.copy()
+
+    for col in calc_df.columns:
+        if col != "character":
+            calc_df[col] = pd.to_numeric(calc_df[col], errors="coerce")
+
+    calc_df["gear_score"] = calc_df.apply(calc_gear_score, axis=1)
+
+    # ===== DATA HIỂN THỊ =====
+    display_df = calc_df.copy()
+
+    for col in display_df.columns:
+        if col != "character":
+            display_df[col] = display_df[col].apply(
+                lambda x: f"{int(x):,}" if pd.notna(x) else ""
+            )
+
+    # ===== HÀM THÊM ICON =====
+    def add_rank_icon(df):
+        df = df.reset_index(drop=True)
+        icons = ["🥇", "🥈", "🥉"]
+
+        df.insert(0, "Top", "")
+
+        for i in range(min(3, len(df))):
+            df.loc[i, "Top"] = icons[i]
+
+        return df
 
     col1, col2, col3 = st.columns(3)
 
     with col1:
         st.write("⚔️ Lực chiến")
-        st.dataframe(gear_df.sort_values("luc_chien", ascending=False)[["character","luc_chien"]])
+        df_power = display_df.sort_values("luc_chien", ascending=False)[["character","luc_chien"]]
+        st.dataframe(add_rank_icon(df_power), use_container_width=True)
 
     with col2:
         st.write("💥 DPS")
-        st.dataframe(gear_df.sort_values("dps", ascending=False)[["character","dps"]])
+        df_dps = display_df.sort_values("dps", ascending=False)[["character","dps"]]
+        st.dataframe(add_rank_icon(df_dps), use_container_width=True)
 
     with col3:
         st.write("🛡️ Gear Score")
-        st.dataframe(gear_df.sort_values("gear_score", ascending=False)[["character","gear_score"]])
+        df_gear = display_df.sort_values("gear_score", ascending=False)[["character","gear_score"]]
+        st.dataframe(add_rank_icon(df_gear), use_container_width=True)
