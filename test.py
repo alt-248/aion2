@@ -261,48 +261,44 @@ if not gear_row.empty:
         st.error(f"🔻 Gear yếu: {', '.join(weak)}")
 
 # ================= GEAR TABLE =================
+# ================= GEAR TABLE =================
 st.subheader("📊 Gear Table")
 
 if not gear_df.empty:
-    gear_df["gear_score"] = gear_df.apply(calc_gear_score, axis=1)
-    # ===== DATA TÍNH TOÁN (GIỮ NGUYÊN INT) =====
+
+    # ===== DATA TÍNH TOÁN (GIỮ SỐ) =====
     calc_df = gear_df.copy()
 
-    # ép toàn bộ về số (quan trọng)
     for col in calc_df.columns:
         if col != "character":
             calc_df[col] = pd.to_numeric(calc_df[col], errors="coerce")
 
     calc_df["gear_score"] = calc_df.apply(calc_gear_score, axis=1)
 
-    # ===== DATA HIỂN THỊ =====
-    display_df = calc_df.copy()
-    
-    # ===== FIX FORMAT SỐ =====
-    display_gear_df = gear_df.copy()
+    # ===== DATA HIỂN THỊ (FORMAT ĐẸP) =====
+    display_gear_df = calc_df.copy()
+
     for col in display_gear_df.columns:
         if col != "character":
             display_gear_df[col] = display_gear_df[col].apply(
                 lambda x: f"{int(x):,}" if pd.notna(x) else ""
             )
 
-    # ===== RENAME =====
     display_gear_df = display_gear_df.rename(columns=GEAR_LABELS)
 
-    # ===== NEW HIGHLIGHT LOGIC =====
-    def highlight_gear_display(df):
-        style = pd.DataFrame("", index=df.index, columns=df.columns)
+    # ===== HIGHLIGHT (DÙNG calc_df) =====
+    def highlight_gear_display(df_calc, df_display):
+        style = pd.DataFrame("", index=df_display.index, columns=df_display.columns)
 
         for col_key, col_label in GEAR_LABELS.items():
 
-            # bỏ lực chiến + dps
             if col_key in ["luc_chien", "dps"]:
                 continue
 
-            if col_label not in df.columns:
+            if col_key not in df_calc.columns:
                 continue
 
-            series = df[col_label].dropna()
+            series = df_calc[col_key].dropna()
 
             if series.empty:
                 continue
@@ -310,31 +306,26 @@ if not gear_df.empty:
             max_val = series.max()
             min_val = series.min()
 
-            # ===== CASE 1: tất cả bằng nhau → bỏ qua =====
+            # tất cả bằng nhau → bỏ
             if max_val == min_val:
                 continue
 
-            # ===== GREEN: max =====
-            style[col_label] = df[col_label].apply(
-                lambda v: "background-color:lightgreen"
-                if pd.notna(v) and v == max_val else ""
-            )
+            # ===== xanh lá (max) =====
+            for idx in df_display.index:
+                val = df_calc.loc[idx, col_key]
+                if pd.notna(val) and val == max_val:
+                    style.loc[idx, col_label] = "background-color:lightgreen"
 
-            # ===== TÍNH NGƯỠNG YẾU =====
-            threshold = int(max_val * 0.9)  # -10%
+            # ===== tính yếu =====
+            threshold = int(max_val * 0.9)
 
-            weak_mask = df[col_label].apply(
-                lambda v: pd.notna(v) and v < threshold
-            )
-
+            weak_mask = df_calc[col_key] < threshold
             weak_count = weak_mask.sum()
-            total_count = df[col_label].count()
+            total = df_calc[col_key].count()
 
-            # ===== RULE 60% =====
-            if total_count > 0 and (weak_count / total_count) < 0.6:
-
-                for idx in df.index:
-                    val = df.loc[idx, col_label]
+            if total > 0 and (weak_count / total) < 0.6:
+                for idx in df_display.index:
+                    val = df_calc.loc[idx, col_key]
 
                     if pd.notna(val) and val < threshold:
                         style.loc[idx, col_label] = "background-color:red;color:white"
@@ -342,7 +333,7 @@ if not gear_df.empty:
         return style
 
     styled = display_gear_df.style.apply(
-        lambda x: highlight_gear_display(display_gear_df),
+        lambda x: highlight_gear_display(calc_df, display_gear_df),
         axis=None
     )
 
