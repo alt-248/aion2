@@ -287,7 +287,7 @@ if not gear_df.empty:
     display_gear_df = display_gear_df.rename(columns=GEAR_LABELS)
 
     # ===== HIGHLIGHT (DÙNG calc_df) =====
-    def highlight_gear_display(df_calc, df_display):
+def highlight_gear_display(df_calc, df_display):
         style = pd.DataFrame("", index=df_display.index, columns=df_display.columns)
 
         for col_key, col_label in GEAR_LABELS.items():
