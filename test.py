@@ -114,15 +114,7 @@ def check_alert(df):
 
     return full_e, warn_e, full_n, warn_n
 
-# ================= TABLE =================
-display_df = st.session_state.df.drop(columns=["id","last_update"], errors="ignore")
 
-styled_df = display_df.style.apply(
-    lambda x: highlight_energy(display_df),
-    axis=None
-)
-
-st.dataframe(styled_df, use_container_width=True)
 # ================= AUTO SYSTEM =================
 def auto_system(df):
     state = load_system_state()
@@ -196,9 +188,16 @@ if full_n:
     st.error(f"💀 Full Nightmare: {', '.join(full_n)}")
 if warn_n:
     st.warning(f"💀 Nightmare 80%+: {', '.join(warn_n)}")
-# Ẩn cột
+
+# ================= TABLE =================
 display_df = st.session_state.df.drop(columns=["id","last_update"], errors="ignore")
-st.dataframe(display_df, use_container_width=True)
+
+styled_df = display_df.style.apply(
+    lambda x: highlight_energy(display_df),
+    axis=None
+)
+
+st.dataframe(styled_df, use_container_width=True)
 
 # ================= SELECT =================
 idx = st.selectbox(
