@@ -382,7 +382,7 @@ if not gear_df.empty:
 
         return df
 
-    col1, col2, col3 = st.columns(4)
+    col1, col2, col3 = st.columns(3)
 
     with col1:
         st.write("⚔️ Lực chiến")
