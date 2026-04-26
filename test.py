@@ -113,17 +113,7 @@ def check_alert(df):
     warn_n = df[(df["nightmare"] >= MAX_NIGHTMARE*0.8) & (df["nightmare"] < MAX_NIGHTMARE)]["character"].tolist()
 
     return full_e, warn_e, full_n, warn_n
-# ================= ALERT UI =================
-full_e, warn_e, full_n, warn_n = check_alert(st.session_state.df)
 
-if full_e:
-    st.error(f"⚡ Full Energy: {', '.join(full_e)}")
-if warn_e:
-    st.warning(f"⚡ Energy 80%+: {', '.join(warn_e)}")
-if full_n:
-    st.error(f"💀 Full Nightmare: {', '.join(full_n)}")
-if warn_n:
-    st.warning(f"💀 Nightmare 80%+: {', '.join(warn_n)}")
 # ================= TABLE =================
 display_df = st.session_state.df.drop(columns=["id","last_update"], errors="ignore")
 
@@ -195,7 +185,17 @@ st.session_state.df = auto_system(st.session_state.df)
 
 # ================= UI =================
 st.title("⚡ Energy Tracker PRO")
+# ================= ALERT UI =================
+full_e, warn_e, full_n, warn_n = check_alert(st.session_state.df)
 
+if full_e:
+    st.error(f"⚡ Full Energy: {', '.join(full_e)}")
+if warn_e:
+    st.warning(f"⚡ Energy 80%+: {', '.join(warn_e)}")
+if full_n:
+    st.error(f"💀 Full Nightmare: {', '.join(full_n)}")
+if warn_n:
+    st.warning(f"💀 Nightmare 80%+: {', '.join(warn_n)}")
 # Ẩn cột
 display_df = st.session_state.df.drop(columns=["id","last_update"], errors="ignore")
 st.dataframe(display_df, use_container_width=True)
