@@ -13,7 +13,7 @@ SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# ================= GEAR =================
+# ================= GEAR LABEL =================
 GEAR_LABELS = {
     "luc_chien":"Lực chiến","dps":"Dps","vu_khi":"Vũ khí","khien":"Khiên","non":"Nón",
     "vai":"Vai","giap":"Giáp","quan":"Quần","tay":"Tay","ao_choang":"Áo choàng",
@@ -62,12 +62,13 @@ def save_row(row):
         "last_update": utc_time.isoformat()
     }).eq("id", int(row["id"])).execute()
 
-# ================= ENERGY =================
+# ================= TIME =================
 def get_block_time(dt):
     dt = dt.astimezone(UTC7)
     hour_block = (dt.hour // 3) * 3
     return dt.replace(hour=hour_block, minute=0, second=0, microsecond=0)
 
+# ================= ENERGY =================
 def update_energy(df):
     now = pd.Timestamp.now(tz=UTC7)
     now_block = get_block_time(now)
@@ -85,12 +86,13 @@ def update_energy(df):
 
     return df
 
-# ================= AUTO =================
+# ================= AUTO SYSTEM =================
 def auto_system(df):
     state = load_system_state()
     now = datetime.now(UTC7)
     today = str(now.date())
 
+    # Nightmare
     if now.hour >= 3 and state["last_nightmare_date"] != today:
         df["nightmare"] = (df["nightmare"] + 2).clip(upper=MAX_NIGHTMARE)
         for i in df.index:
@@ -98,6 +100,7 @@ def auto_system(df):
         update_system_state({"last_nightmare_date": today})
         st.success("⚔️ Đã auto +2 Nightmare")
 
+    # Reset Trial Thứ 4
     if now.weekday() == 2 and now.hour >= 3:
         if state["last_trial_reset_date"] != today:
             df["trial"] = 3
@@ -107,36 +110,6 @@ def auto_system(df):
             st.warning("🔁 Đã reset Trial")
 
     return df
-
-# ================= ALERT =================
-def check_alert(df):
-    full_e = df[df["energy"] >= MAX_ENERGY]["character"].tolist()
-    warn_e = df[(df["energy"] >= MAX_ENERGY*0.8) & (df["energy"] < MAX_ENERGY)]["character"].tolist()
-
-    full_n = df[df["nightmare"] >= MAX_NIGHTMARE]["character"].tolist()
-    warn_n = df[(df["nightmare"] >= MAX_NIGHTMARE*0.8) & (df["nightmare"] < MAX_NIGHTMARE)]["character"].tolist()
-
-    return full_e, warn_e, full_n, warn_n
-
-# ================= HIGHLIGHT ENERGY =================
-def highlight_energy(df):
-    style = pd.DataFrame("", index=df.index, columns=df.columns)
-
-    if "energy" in df.columns:
-        style["energy"] = df["energy"].apply(
-            lambda v: "background-color:red;color:white"
-            if v >= MAX_ENERGY else
-            "background-color:yellow" if v >= MAX_ENERGY*0.8 else ""
-        )
-
-    if "nightmare" in df.columns:
-        style["nightmare"] = df["nightmare"].apply(
-            lambda v: "background-color:red;color:white"
-            if v >= MAX_NIGHTMARE else
-            "background-color:yellow" if v >= MAX_NIGHTMARE*0.8 else ""
-        )
-
-    return style
 
 # ================= GEAR =================
 def load_gear():
@@ -173,27 +146,12 @@ if "df" not in st.session_state:
 st.session_state.df = update_energy(st.session_state.df)
 st.session_state.df = auto_system(st.session_state.df)
 
-# ================= ALERT UI =================
-full_e, warn_e, full_n, warn_n = check_alert(st.session_state.df)
+# ================= UI =================
+st.title("⚡ Energy Tracker PRO")
 
-if full_e:
-    st.error(f"⚡ Full Energy: {', '.join(full_e)}")
-if warn_e:
-    st.warning(f"⚡ Energy 80%+: {', '.join(warn_e)}")
-if full_n:
-    st.error(f"💀 Full Nightmare: {', '.join(full_n)}")
-if warn_n:
-    st.warning(f"💀 Nightmare 80%+: {', '.join(warn_n)}")
-
-# ================= TABLE =================
+# Ẩn cột
 display_df = st.session_state.df.drop(columns=["id","last_update"], errors="ignore")
-
-styled_df = display_df.style.apply(
-    lambda x: highlight_energy(display_df),
-    axis=None
-)
-
-st.dataframe(styled_df, use_container_width=True)
+st.dataframe(display_df, use_container_width=True)
 
 # ================= SELECT =================
 idx = st.selectbox(
@@ -215,3 +173,74 @@ if st.button("💾 Save"):
     st.session_state.df.loc[idx, "last_update"] = get_block_time(pd.Timestamp.now(tz=UTC7))
     save_row(st.session_state.df.loc[idx])
     st.rerun()
+
+# ================= GEAR UI =================
+st.subheader("🛡️ Gear")
+
+gear_df = load_gear()
+gear_row = gear_df[gear_df["character"] == character_name]
+
+gear_data = {}
+cols = st.columns(4)
+
+for i, col in enumerate(GEAR_COLUMNS):
+    val = gear_row.iloc[0][col] if not gear_row.empty else 0
+    with cols[i % 4]:
+        gear_data[col] = st.number_input(
+            GEAR_LABELS[col],
+            value=int(val) if pd.notna(val) else 0,
+            key=f"{character_name}_{col}"
+        )
+
+if st.button("💾 Save Gear"):
+    save_gear(character_name, gear_data)
+    st.rerun()
+
+# ================= ALERT GEAR =================
+if not gear_row.empty:
+    rowg = gear_row.iloc[0]
+
+    missing = [GEAR_LABELS[c] for c in GEAR_COLUMNS[2:] if pd.isna(rowg.get(c)) or rowg.get(c)==0]
+    weak = []
+
+    for col in GEAR_COLUMNS[2:]:
+        min_val = gear_df[col].min(skipna=True)
+        if rowg.get(col) == min_val:
+            weak.append(GEAR_LABELS[col])
+
+    if missing:
+        st.warning(f"⚠️ Thiếu gear: {', '.join(missing)}")
+
+    if weak:
+        st.error(f"🔻 Gear yếu: {', '.join(weak)}")
+
+# ================= GEAR TABLE =================
+st.subheader("📊 Gear Table")
+
+if not gear_df.empty:
+    gear_df["gear_score"] = gear_df.apply(calc_gear_score, axis=1)
+
+    styled = gear_df.rename(columns=GEAR_LABELS)\
+        .style.apply(lambda x: highlight_gear(gear_df), axis=None)
+
+    st.dataframe(styled, use_container_width=True)
+
+# ================= RANKING =================
+st.subheader("🏆 Ranking")
+
+if not gear_df.empty:
+    gear_df["gear_score"] = gear_df.apply(calc_gear_score, axis=1)
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.write("⚔️ Lực chiến")
+        st.dataframe(gear_df.sort_values("luc_chien", ascending=False)[["character","luc_chien"]])
+
+    with col2:
+        st.write("💥 DPS")
+        st.dataframe(gear_df.sort_values("dps", ascending=False)[["character","dps"]])
+
+    with col3:
+        st.write("🛡️ Gear Score")
+        st.dataframe(gear_df.sort_values("gear_score", ascending=False)[["character","gear_score"]])
