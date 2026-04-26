@@ -13,7 +13,7 @@ SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# ================= GEAR LABEL =================
+# ================= GEAR =================
 GEAR_LABELS = {
     "luc_chien":"Lực chiến","dps":"Dps","vu_khi":"Vũ khí","khien":"Khiên","non":"Nón",
     "vai":"Vai","giap":"Giáp","quan":"Quần","tay":"Tay","ao_choang":"Áo choàng",
@@ -62,13 +62,12 @@ def save_row(row):
         "last_update": utc_time.isoformat()
     }).eq("id", int(row["id"])).execute()
 
-# ================= TIME =================
+# ================= ENERGY =================
 def get_block_time(dt):
     dt = dt.astimezone(UTC7)
     hour_block = (dt.hour // 3) * 3
     return dt.replace(hour=hour_block, minute=0, second=0, microsecond=0)
 
-# ================= ENERGY =================
 def update_energy(df):
     now = pd.Timestamp.now(tz=UTC7)
     now_block = get_block_time(now)
@@ -86,13 +85,12 @@ def update_energy(df):
 
     return df
 
-# ================= AUTO SYSTEM =================
+# ================= AUTO =================
 def auto_system(df):
     state = load_system_state()
     now = datetime.now(UTC7)
     today = str(now.date())
 
-    # Nightmare
     if now.hour >= 3 and state["last_nightmare_date"] != today:
         df["nightmare"] = (df["nightmare"] + 2).clip(upper=MAX_NIGHTMARE)
         for i in df.index:
@@ -100,7 +98,6 @@ def auto_system(df):
         update_system_state({"last_nightmare_date": today})
         st.success("⚔️ Đã auto +2 Nightmare")
 
-    # Reset Trial Thứ 4
     if now.weekday() == 2 and now.hour >= 3:
         if state["last_trial_reset_date"] != today:
             df["trial"] = 3
@@ -111,7 +108,7 @@ def auto_system(df):
 
     return df
 
-# ================= ALERT ENERGY =================
+# ================= ALERT =================
 def check_alert(df):
     full_e = df[df["energy"] >= MAX_ENERGY]["character"].tolist()
     warn_e = df[(df["energy"] >= MAX_ENERGY*0.8) & (df["energy"] < MAX_ENERGY)]["character"].tolist()
@@ -141,6 +138,33 @@ def highlight_energy(df):
 
     return style
 
+# ================= GEAR =================
+def load_gear():
+    res = supabase.table("gear_tracker").select("*").execute()
+    df = pd.DataFrame(res.data)
+    if df.empty:
+        return pd.DataFrame(columns=["character"] + GEAR_COLUMNS)
+    return df
+
+def save_gear(character, data):
+    payload = {"character": character}
+    for col in GEAR_COLUMNS:
+        payload[col] = int(data[col]) if data[col] else None
+    supabase.table("gear_tracker").upsert(payload).execute()
+
+def calc_gear_score(row):
+    return sum([row[c] for c in GEAR_COLUMNS[2:] if pd.notna(row.get(c))])
+
+def highlight_gear(df):
+    style = pd.DataFrame("", index=df.index, columns=df.columns)
+    for col in GEAR_COLUMNS[2:]:
+        min_val = df[col].min(skipna=True)
+        style[col] = df[col].apply(
+            lambda v: "background-color:red;color:white"
+            if pd.notna(v) and v == min_val else ""
+        )
+    return style
+
 # ================= INIT =================
 if "df" not in st.session_state:
     st.session_state.df = load_data()
@@ -154,13 +178,10 @@ full_e, warn_e, full_n, warn_n = check_alert(st.session_state.df)
 
 if full_e:
     st.error(f"⚡ Full Energy: {', '.join(full_e)}")
-
 if warn_e:
     st.warning(f"⚡ Energy 80%+: {', '.join(warn_e)}")
-
 if full_n:
     st.error(f"💀 Full Nightmare: {', '.join(full_n)}")
-
 if warn_n:
     st.warning(f"💀 Nightmare 80%+: {', '.join(warn_n)}")
 
