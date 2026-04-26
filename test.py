@@ -21,7 +21,7 @@ def safe_parse_time(col):
     return parsed.dt.tz_convert(UTC7)
 
 def load_data():
-    res = supabase.table("energy_tracker1").select("*").execute()
+    res = supabase.table("energy_tracker1").select("*").execute()  # CHANGED
     df = pd.DataFrame(res.data)
 
     df["last_update"] = safe_parse_time(df["last_update"])
@@ -31,7 +31,7 @@ def load_data():
 def save_row(row):
     utc_time = row["last_update"].astimezone(timezone.utc)
 
-    supabase.table("energy_tracker1").update({
+    supabase.table("energy_tracker1").update({  # CHANGED
         "energy": int(row["energy"]),
         "nightmare": int(row["nightmare"]),
         "trial": int(row["trial"]),
@@ -127,7 +127,7 @@ def save_gear(character, data):
 # ================= NEW: GEAR SCORE =================
 def calc_gear_score(row):
     total = 0
-    for col in GEAR_COLUMNS[2:]:  # bỏ lực chiến + dps
+    for col in GEAR_COLUMNS[2:]:
         if pd.notna(row.get(col)):
             total += row[col]
     return total
@@ -232,7 +232,7 @@ for i, col in enumerate(GEAR_COLUMNS):
         val = gear_row.iloc[0].get(col)
 
     with cols[i % 4]:
-        gear_data[col] = st.number_input(col, 0, 100, int(val) if pd.notna(val) else 0)
+        gear_data[col] = st.number_input(col, value=int(val) if pd.notna(val) else 0)  # NO LIMIT
 
 if st.button("💾 Save Gear"):
     save_gear(character_name, gear_data)
