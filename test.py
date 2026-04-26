@@ -319,18 +319,20 @@ if not gear_df.empty:
             # ===== tính yếu =====
             threshold = int(max_val * 0.9)
 
-            weak_mask = df_calc[col_key] < threshold
-            weak_count = weak_mask.sum()
-            total = df_calc[col_key].count()
+            weak_candidates = df_calc[col_key][df_calc[col_key] < threshold]
 
-            if total > 0 and (weak_count / total) < 0.6:
-                for idx in df_display.index:
-                    val = df_calc.loc[idx, col_key]
+            if not weak_candidates.empty:
+               min_weak = weak_candidates.min()
+               min_weak_count = (df_calc[col_key] == min_weak).sum()
+               total = df_calc[col_key].count()
 
-                    if pd.notna(val) and val < threshold:
-                        style.loc[idx, col_label] = "background-color:red;color:white"
+            if total > 0 and (min_weak_count / total) < 0.6:
+               for idx in df_display.index:
+                   val = df_calc.loc[idx, col_key]
 
-        return style
+               if pd.notna(val) and val == min_weak:
+                   style.loc[idx, col_label] = "background-color:red;color:white"
+    return style
 
     styled = display_gear_df.style.apply(
         lambda x: highlight_gear_display(calc_df, display_gear_df),
