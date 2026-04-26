@@ -261,29 +261,72 @@ if not gear_row.empty:
         st.error(f"🔻 Gear yếu: {', '.join(weak)}")
 
 # ================= GEAR TABLE =================
+# ================= GEAR TABLE =================
 st.subheader("📊 Gear Table")
 
 if not gear_df.empty:
     gear_df["gear_score"] = gear_df.apply(calc_gear_score, axis=1)
 
-    # FIX: rename trước
-    display_gear_df = gear_df.rename(columns=GEAR_LABELS)
+    # ===== FIX FORMAT SỐ =====
+    display_gear_df = gear_df.copy()
+    for col in display_gear_df.columns:
+        if col != "character":
+            display_gear_df[col] = display_gear_df[col].apply(
+                lambda x: int(x) if pd.notna(x) else x
+            )
 
-    # FIX: highlight theo df đã rename
+    # ===== RENAME =====
+    display_gear_df = display_gear_df.rename(columns=GEAR_LABELS)
+
+    # ===== NEW HIGHLIGHT LOGIC =====
     def highlight_gear_display(df):
         style = pd.DataFrame("", index=df.index, columns=df.columns)
 
         for col_key, col_label in GEAR_LABELS.items():
+
+            # bỏ lực chiến + dps
             if col_key in ["luc_chien", "dps"]:
                 continue
 
-            if col_label in df.columns:
-                min_val = df[col_label].min(skipna=True)
+            if col_label not in df.columns:
+                continue
 
-                style[col_label] = df[col_label].apply(
-                    lambda v: "background-color:red;color:white"
-                    if pd.notna(v) and v == min_val else ""
-                )
+            series = df[col_label].dropna()
+
+            if series.empty:
+                continue
+
+            max_val = series.max()
+            min_val = series.min()
+
+            # ===== CASE 1: tất cả bằng nhau → bỏ qua =====
+            if max_val == min_val:
+                continue
+
+            # ===== GREEN: max =====
+            style[col_label] = df[col_label].apply(
+                lambda v: "background-color:lightgreen"
+                if pd.notna(v) and v == max_val else ""
+            )
+
+            # ===== TÍNH NGƯỠNG YẾU =====
+            threshold = int(max_val * 0.9)  # -10%
+
+            weak_mask = df[col_label].apply(
+                lambda v: pd.notna(v) and v < threshold
+            )
+
+            weak_count = weak_mask.sum()
+            total_count = df[col_label].count()
+
+            # ===== RULE 60% =====
+            if total_count > 0 and (weak_count / total_count) < 0.6:
+
+                for idx in df.index:
+                    val = df.loc[idx, col_label]
+
+                    if pd.notna(val) and val < threshold:
+                        style.loc[idx, col_label] = "background-color:red;color:white"
 
         return style
 
@@ -292,9 +335,7 @@ if not gear_df.empty:
         axis=None
     )
 
-    st.dataframe(styled, use_container_width=True)
-
-# ================= RANKING =================
+    st.dataframe(styled, use_container_width=True)# ================= RANKING =================
 st.subheader("🏆 Ranking")
 
 if not gear_df.empty:
