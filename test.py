@@ -288,50 +288,54 @@ if not gear_df.empty:
 
     # ===== HIGHLIGHT (DÙNG calc_df) =====
 def highlight_gear_display(df_calc, df_display):
-        style = pd.DataFrame("", index=df_display.index, columns=df_display.columns)
+    style = pd.DataFrame("", index=df_display.index, columns=df_display.columns)
 
-        for col_key, col_label in GEAR_LABELS.items():
+    for col_key, col_label in GEAR_LABELS.items():
 
-            if col_key in ["luc_chien", "dps"]:
-                continue
+        # bỏ lực chiến + dps
+        if col_key in ["luc_chien", "dps"]:
+            continue
 
-            if col_key not in df_calc.columns:
-                continue
+        if col_key not in df_calc.columns:
+            continue
 
-            series = df_calc[col_key].dropna()
+        series = df_calc[col_key].dropna()
 
-            if series.empty:
-                continue
+        if series.empty:
+            continue
 
-            max_val = series.max()
-            min_val = series.min()
+        max_val = series.max()
+        min_val = series.min()
 
-            # tất cả bằng nhau → bỏ
-            if max_val == min_val:
-                continue
+        # tất cả bằng nhau → bỏ
+        if max_val == min_val:
+            continue
 
-            # ===== xanh lá (max) =====
-            for idx in df_display.index:
-                val = df_calc.loc[idx, col_key]
-                if pd.notna(val) and val == max_val:
-                    style.loc[idx, col_label] = "background-color:lightgreen"
+        # ===== xanh lá (max) =====
+        for idx in df_display.index:
+            val = df_calc.loc[idx, col_key]
+            if pd.notna(val) and val == max_val:
+                style.loc[idx, col_label] = "background-color:lightgreen"
 
-            # ===== tính yếu =====
-            threshold = int(max_val * 0.9)
+        # ===== tính yếu =====
+        threshold = int(max_val * 0.9)
 
-            weak_candidates = df_calc[col_key][df_calc[col_key] < threshold]
+        weak_candidates = df_calc[col_key][df_calc[col_key] < threshold]
 
-            if not weak_candidates.empty:
-               min_weak = weak_candidates.min()
-               min_weak_count = (df_calc[col_key] == min_weak).sum()
-               total = df_calc[col_key].count()
+        if not weak_candidates.empty:
+            min_weak = weak_candidates.min()
+            min_weak_count = (df_calc[col_key] == min_weak).sum()
+            total = df_calc[col_key].count()
 
+            # rule < 60%
             if total > 0 and (min_weak_count / total) < 0.6:
-               for idx in df_display.index:
-                   val = df_calc.loc[idx, col_key]
 
-               if pd.notna(val) and val == min_weak:
-                   style.loc[idx, col_label] = "background-color:red;color:white"
+                for idx in df_display.index:
+                    val = df_calc.loc[idx, col_key]
+
+                    if pd.notna(val) and val == min_weak:
+                        style.loc[idx, col_label] = "background-color:red;color:white"
+
     return style
 
     styled = display_gear_df.style.apply(
