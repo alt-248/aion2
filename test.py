@@ -13,16 +13,21 @@ SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# ================= GEAR LABEL =================
-GEAR_LABELS = {
-    "luc_chien":"Lực chiến","dps":"Dps","vu_khi":"Vũ khí","khien":"Khiên","non":"Nón",
-    "vai":"Vai","giap":"Giáp","quan":"Quần","tay":"Tay","ao_choang":"Áo choàng",
-    "giay":"Giầy","bong_tai_1":"Bông tai 1","bong_tai_2":"Bông tai 2",
-    "day_chuyen":"Dây chuyền","nhan_1":"Nhẫn 1","nhan_2":"Nhẫn 2",
-    "vong_tay_1":"Vòng tay 1","vong_tay_2":"Vòng tay 2"
-}
+# ================= SYSTEM STATE =================
+def load_system_state():
+    res = supabase.table("system_state").select("*").execute()
+    if not res.data:
+        supabase.table("system_state").insert({
+            "id": 1,
+            "last_nightmare_date": None,
+            "last_trial_reset_date": None
+        }).execute()
+        return {"last_nightmare_date": None, "last_trial_reset_date": None}
 
-GEAR_COLUMNS = list(GEAR_LABELS.keys())
+    return res.data[0]
+
+def update_system_state(data):
+    supabase.table("system_state").update(data).eq("id", 1).execute()
 
 # ================= LOAD =================
 def safe_parse_time(col):
@@ -71,54 +76,52 @@ def update_energy(df):
 
     return df
 
-# ================= FIX AUTO NIGHTMARE =================
-def auto_nightmare(df):
-    today = datetime.now(UTC7).date()
+# ================= AUTO SYSTEM =================
+def auto_system(df):
+    state = load_system_state()
+    now = datetime.now(UTC7)
+    today = str(now.date())
 
-    for i in df.index:
-        last_date = df.loc[i].get("last_nightmare_date")
+    # ===== NIGHTMARE =====
+    if now.hour >= 3 and state["last_nightmare_date"] != today:
+        df["nightmare"] = (df["nightmare"] + 2).clip(upper=MAX_NIGHTMARE)
 
-        if pd.isna(last_date) or str(last_date) != str(today):
-            if datetime.now(UTC7).hour >= 3:
-                df.loc[i, "nightmare"] = min(df.loc[i, "nightmare"] + 2, MAX_NIGHTMARE)
-                df.loc[i, "last_nightmare_date"] = str(today)
+        for i in df.index:
+            save_row(df.loc[i])
 
-                supabase.table("energy_tracker1").update({
-                    "nightmare": int(df.loc[i, "nightmare"]),
-                    "last_nightmare_date": str(today)
-                }).eq("id", int(df.loc[i, "id"])).execute()
+        update_system_state({"last_nightmare_date": today})
+        st.success("⚔️ Đã auto +2 Nightmare")
+
+    # ===== RESET TRIAL (THỨ 4) =====
+    if now.weekday() == 2 and now.hour >= 3:  # Thứ 4 = 2
+        if state["last_trial_reset_date"] != today:
+            df["trial"] = 3
+
+            for i in df.index:
+                save_row(df.loc[i])
+
+            update_system_state({"last_trial_reset_date": today})
+            st.warning("🔁 Đã reset Trial (Thứ 4)")
 
     return df
-
-# ================= GEAR =================
-def load_gear():
-    res = supabase.table("gear_tracker").select("*").execute()
-    df = pd.DataFrame(res.data)
-    if df.empty:
-        return pd.DataFrame(columns=["character"] + GEAR_COLUMNS)
-    return df
-
-def save_gear(character, data):
-    payload = {"character": character}
-    for col in GEAR_COLUMNS:
-        payload[col] = int(data[col]) if data[col] else None
-    supabase.table("gear_tracker").upsert(payload).execute()
-
-def calc_gear_score(row):
-    return sum([row[c] for c in GEAR_COLUMNS[2:] if pd.notna(row.get(c))])
 
 # ================= INIT =================
 if "df" not in st.session_state:
     st.session_state.df = load_data()
 
+# ================= RUN =================
 st.session_state.df = update_energy(st.session_state.df)
-st.session_state.df = auto_nightmare(st.session_state.df)
+st.session_state.df = auto_system(st.session_state.df)
 
 # ================= UI =================
 st.title("⚡ Energy Tracker PRO")
 
-st.dataframe(st.session_state.df, use_container_width=True)
+# ẨN CỘT
+display_df = st.session_state.df.drop(columns=["id", "last_update"], errors="ignore")
 
+st.dataframe(display_df, use_container_width=True)
+
+# ================= SELECT =================
 idx = st.selectbox(
     "Character",
     st.session_state.df.index,
@@ -126,69 +129,16 @@ idx = st.selectbox(
 )
 
 row = st.session_state.df.loc[idx]
-character_name = row["character"]
 
 # ================= INPUT =================
 energy = st.number_input("Energy", 0, MAX_ENERGY, int(row["energy"]))
 nightmare = st.number_input("Nightmare", 0, MAX_NIGHTMARE, int(row["nightmare"]))
 trial = st.number_input("Trial", 0, 10, int(row["trial"]))
 
+# ================= SAVE =================
 if st.button("💾 Save"):
     st.session_state.df.loc[idx, ["energy","nightmare","trial"]] = [energy,nightmare,trial]
     st.session_state.df.loc[idx, "last_update"] = get_block_time(pd.Timestamp.now(tz=UTC7))
+
     save_row(st.session_state.df.loc[idx])
     st.rerun()
-
-# ================= RESET =================
-if st.button("🔁 Reset Trial = 3"):
-    st.session_state.df["trial"] = 3
-    for i in st.session_state.df.index:
-        save_row(st.session_state.df.loc[i])
-    st.rerun()
-
-# ================= GEAR UI =================
-st.subheader("🛡️ Gear")
-
-gear_df = load_gear()
-gear_row = gear_df[gear_df["character"] == character_name]
-
-gear_data = {}
-cols = st.columns(4)
-
-for i, col in enumerate(GEAR_COLUMNS):
-    val = gear_row.iloc[0][col] if not gear_row.empty else 0
-
-    with cols[i % 4]:
-        gear_data[col] = st.number_input(
-            GEAR_LABELS[col],
-            value=int(val) if pd.notna(val) else 0,
-            key=f"{character_name}_{col}"
-        )
-
-if st.button("💾 Save Gear"):
-    save_gear(character_name, gear_data)
-    st.rerun()
-
-# ================= RANKING =================
-st.subheader("🏆 Ranking")
-
-if not gear_df.empty:
-    gear_df["gear_score"] = gear_df.apply(calc_gear_score, axis=1)
-
-    rank_power = gear_df.sort_values("luc_chien", ascending=False)[["character","luc_chien"]]
-    rank_dps = gear_df.sort_values("dps", ascending=False)[["character","dps"]]
-    rank_gear = gear_df.sort_values("gear_score", ascending=False)[["character","gear_score"]]
-
-    col1, col2, col3 = st.columns(3)
-
-    with col1:
-        st.write("⚔️ Lực chiến")
-        st.dataframe(rank_power)
-
-    with col2:
-        st.write("💥 DPS")
-        st.dataframe(rank_dps)
-
-    with col3:
-        st.write("🛡️ Gear Score")
-        st.dataframe(rank_gear)
