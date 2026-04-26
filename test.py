@@ -21,9 +21,8 @@ def safe_parse_time(col):
     return parsed.dt.tz_convert(UTC7)
 
 def load_data():
-    res = supabase.table("energy_tracker1").select("*").execute()  # CHANGED
+    res = supabase.table("energy_tracker1").select("*").execute()
     df = pd.DataFrame(res.data)
-
     df["last_update"] = safe_parse_time(df["last_update"])
     return df
 
@@ -31,7 +30,7 @@ def load_data():
 def save_row(row):
     utc_time = row["last_update"].astimezone(timezone.utc)
 
-    supabase.table("energy_tracker1").update({  # CHANGED
+    supabase.table("energy_tracker1").update({
         "energy": int(row["energy"]),
         "nightmare": int(row["nightmare"]),
         "trial": int(row["trial"]),
@@ -61,7 +60,6 @@ def update_energy(df):
                 df.loc[i, "energy"] + blocks * 15,
                 MAX_ENERGY
             )
-
             df.loc[i, "last_update"] = last_block + pd.Timedelta(hours=blocks * 3)
 
     return df
@@ -98,14 +96,14 @@ def highlight_status(df):
 
     return style
 
-# ================= NEW: GEAR CONFIG =================
+# ================= GEAR CONFIG =================
 GEAR_COLUMNS = [
     "luc_chien","dps","vu_khi","khien","non","vai","giap","quan",
     "tay","ao_choang","giay","bong_tai_1","bong_tai_2",
     "day_chuyen","nhan_1","nhan_2","vong_tay_1","vong_tay_2"
 ]
 
-# ================= NEW: LOAD GEAR =================
+# ================= LOAD GEAR =================
 def load_gear():
     res = supabase.table("gear_tracker").select("*").execute()
     df = pd.DataFrame(res.data)
@@ -115,7 +113,7 @@ def load_gear():
 
     return df
 
-# ================= NEW: SAVE GEAR =================
+# ================= SAVE GEAR =================
 def save_gear(character, data):
     payload = {"character": character}
     for col in GEAR_COLUMNS:
@@ -124,7 +122,7 @@ def save_gear(character, data):
 
     supabase.table("gear_tracker").upsert(payload).execute()
 
-# ================= NEW: GEAR SCORE =================
+# ================= GEAR SCORE =================
 def calc_gear_score(row):
     total = 0
     for col in GEAR_COLUMNS[2:]:
@@ -132,7 +130,7 @@ def calc_gear_score(row):
             total += row[col]
     return total
 
-# ================= NEW: HIGHLIGHT GEAR =================
+# ================= HIGHLIGHT GEAR =================
 def highlight_gear(df):
     style = pd.DataFrame("", index=df.index, columns=df.columns)
 
@@ -217,9 +215,10 @@ if st.button("💾 Save"):
     st.success("✅ Saved!")
     st.rerun()
 
-# ================= NEW: GEAR UI =================
+# ================= GEAR UI =================
 st.subheader("🛡️ Gear Tracker")
 
+# FIX: luôn lấy gear theo character hiện tại
 gear_df = st.session_state.gear_df
 gear_row = gear_df[gear_df["character"] == character_name]
 
@@ -232,14 +231,22 @@ for i, col in enumerate(GEAR_COLUMNS):
         val = gear_row.iloc[0].get(col)
 
     with cols[i % 4]:
-        gear_data[col] = st.number_input(col, value=int(val) if pd.notna(val) else 0)  # NO LIMIT
+        gear_data[col] = st.number_input(
+            col,
+            value=int(val) if pd.notna(val) else 0,
+            key=f"{character_name}_{col}"  # FIX QUAN TRỌNG
+        )
 
 if st.button("💾 Save Gear"):
     save_gear(character_name, gear_data)
+
+    # FIX: reload lại gear_df ngay lập tức
+    st.session_state.gear_df = load_gear()
+
     st.success("Saved Gear!")
     st.rerun()
 
-# ================= NEW: SHOW GEAR TABLE =================
+# ================= SHOW GEAR TABLE =================
 st.subheader("📊 Gear Table")
 
 gear_df = load_gear()
