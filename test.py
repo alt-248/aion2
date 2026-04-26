@@ -261,7 +261,6 @@ if not gear_row.empty:
         st.error(f"🔻 Gear yếu: {', '.join(weak)}")
 
 # ================= GEAR TABLE =================
-# ================= GEAR TABLE =================
 st.subheader("📊 Gear Table")
 
 if not gear_df.empty:
@@ -272,7 +271,7 @@ if not gear_df.empty:
     for col in display_gear_df.columns:
         if col != "character":
             display_gear_df[col] = display_gear_df[col].apply(
-                lambda x: int(x) if pd.notna(x) else x
+                lambda x: f"{int(x):,}" if pd.notna(x) else ""
             )
 
     # ===== RENAME =====
@@ -335,7 +334,9 @@ if not gear_df.empty:
         axis=None
     )
 
-    st.dataframe(styled, use_container_width=True)# ================= RANKING =================
+    st.dataframe(styled, use_container_width=True)
+
+# ================= RANKING =================
 st.subheader("🏆 Ranking")
 
 if not gear_df.empty:
