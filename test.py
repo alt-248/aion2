@@ -220,8 +220,31 @@ st.subheader("📊 Gear Table")
 if not gear_df.empty:
     gear_df["gear_score"] = gear_df.apply(calc_gear_score, axis=1)
 
-    styled = gear_df.rename(columns=GEAR_LABELS)\
-        .style.apply(lambda x: highlight_gear(gear_df), axis=None)
+    # FIX: rename trước
+    display_gear_df = gear_df.rename(columns=GEAR_LABELS)
+
+    # FIX: highlight theo df đã rename
+    def highlight_gear_display(df):
+        style = pd.DataFrame("", index=df.index, columns=df.columns)
+
+        for col_key, col_label in GEAR_LABELS.items():
+            if col_key in ["luc_chien", "dps"]:
+                continue
+
+            if col_label in df.columns:
+                min_val = df[col_label].min(skipna=True)
+
+                style[col_label] = df[col_label].apply(
+                    lambda v: "background-color:red;color:white"
+                    if pd.notna(v) and v == min_val else ""
+                )
+
+        return style
+
+    styled = display_gear_df.style.apply(
+        lambda x: highlight_gear_display(display_gear_df),
+        axis=None
+    )
 
     st.dataframe(styled, use_container_width=True)
 
