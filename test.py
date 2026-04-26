@@ -111,31 +111,32 @@ def auto_system(df):
 
     return df
 
-# ================= GEAR =================
-def load_gear():
-    res = supabase.table("gear_tracker").select("*").execute()
-    df = pd.DataFrame(res.data)
-    if df.empty:
-        return pd.DataFrame(columns=["character"] + GEAR_COLUMNS)
-    return df
+# ================= ALERT ENERGY =================
+def check_alert(df):
+    full_e = df[df["energy"] >= MAX_ENERGY]["character"].tolist()
+    warn_e = df[(df["energy"] >= MAX_ENERGY*0.8) & (df["energy"] < MAX_ENERGY)]["character"].tolist()
 
-def save_gear(character, data):
-    payload = {"character": character}
-    for col in GEAR_COLUMNS:
-        payload[col] = int(data[col]) if data[col] else None
-    supabase.table("gear_tracker").upsert(payload).execute()
+    full_n = df[df["nightmare"] >= MAX_NIGHTMARE]["character"].tolist()
+    warn_n = df[(df["nightmare"] >= MAX_NIGHTMARE*0.8) & (df["nightmare"] < MAX_NIGHTMARE)]["character"].tolist()
 
-def calc_gear_score(row):
-    return sum([row[c] for c in GEAR_COLUMNS[2:] if pd.notna(row.get(c))])
+    return full_e, warn_e, full_n, warn_n
 
-def highlight_gear(df):
+# ================= HIGHLIGHT ENERGY =================
+def highlight_energy(df):
     style = pd.DataFrame("", index=df.index, columns=df.columns)
-    for col in GEAR_COLUMNS[2:]:
-        min_val = df[col].min(skipna=True)
-        style[col] = df[col].apply(
-            lambda v: "background-color:red;color:white"
-            if pd.notna(v) and v == min_val else ""
-        )
+
+    style["energy"] = df["energy"].apply(
+        lambda v: "background-color:red;color:white"
+        if v >= MAX_ENERGY else
+        "background-color:yellow" if v >= MAX_ENERGY*0.8 else ""
+    )
+
+    style["nightmare"] = df["nightmare"].apply(
+        lambda v: "background-color:red;color:white"
+        if v >= MAX_NIGHTMARE else
+        "background-color:yellow" if v >= MAX_NIGHTMARE*0.8 else ""
+    )
+
     return style
 
 # ================= INIT =================
@@ -146,12 +147,26 @@ if "df" not in st.session_state:
 st.session_state.df = update_energy(st.session_state.df)
 st.session_state.df = auto_system(st.session_state.df)
 
-# ================= UI =================
-st.title("⚡ Energy Tracker PRO")
+# ================= ALERT UI =================
+full_e, warn_e, full_n, warn_n = check_alert(st.session_state.df)
 
-# Ẩn cột
+if full_e:
+    st.error(f"⚡ Full Energy: {', '.join(full_e)}")
+
+if warn_e:
+    st.warning(f"⚡ Energy 80%+: {', '.join(warn_e)}")
+
+if full_n:
+    st.error(f"💀 Full Nightmare: {', '.join(full_n)}")
+
+if warn_n:
+    st.warning(f"💀 Nightmare 80%+: {', '.join(warn_n)}")
+
+# ================= TABLE =================
 display_df = st.session_state.df.drop(columns=["id","last_update"], errors="ignore")
-st.dataframe(display_df, use_container_width=True)
+
+styled_df = display_df.style.apply(lambda x: highlight_energy(st.session_state.df), axis=None)
+st.dataframe(styled_df, use_container_width=True)
 
 # ================= SELECT =================
 idx = st.selectbox(
@@ -173,97 +188,3 @@ if st.button("💾 Save"):
     st.session_state.df.loc[idx, "last_update"] = get_block_time(pd.Timestamp.now(tz=UTC7))
     save_row(st.session_state.df.loc[idx])
     st.rerun()
-
-# ================= GEAR UI =================
-st.subheader("🛡️ Gear")
-
-gear_df = load_gear()
-gear_row = gear_df[gear_df["character"] == character_name]
-
-gear_data = {}
-cols = st.columns(4)
-
-for i, col in enumerate(GEAR_COLUMNS):
-    val = gear_row.iloc[0][col] if not gear_row.empty else 0
-    with cols[i % 4]:
-        gear_data[col] = st.number_input(
-            GEAR_LABELS[col],
-            value=int(val) if pd.notna(val) else 0,
-            key=f"{character_name}_{col}"
-        )
-
-if st.button("💾 Save Gear"):
-    save_gear(character_name, gear_data)
-    st.rerun()
-
-# ================= ALERT GEAR =================
-if not gear_row.empty:
-    rowg = gear_row.iloc[0]
-
-    missing = [GEAR_LABELS[c] for c in GEAR_COLUMNS[2:] if pd.isna(rowg.get(c)) or rowg.get(c)==0]
-    weak = []
-
-    for col in GEAR_COLUMNS[2:]:
-        min_val = gear_df[col].min(skipna=True)
-        if rowg.get(col) == min_val:
-            weak.append(GEAR_LABELS[col])
-
-    if missing:
-        st.warning(f"⚠️ Thiếu gear: {', '.join(missing)}")
-
-    if weak:
-        st.error(f"🔻 Gear yếu: {', '.join(weak)}")
-
-# ================= GEAR TABLE =================
-st.subheader("📊 Gear Table")
-
-if not gear_df.empty:
-    gear_df["gear_score"] = gear_df.apply(calc_gear_score, axis=1)
-
-    # FIX: rename trước
-    display_gear_df = gear_df.rename(columns=GEAR_LABELS)
-
-    # FIX: highlight theo df đã rename
-    def highlight_gear_display(df):
-        style = pd.DataFrame("", index=df.index, columns=df.columns)
-
-        for col_key, col_label in GEAR_LABELS.items():
-            if col_key in ["luc_chien", "dps"]:
-                continue
-
-            if col_label in df.columns:
-                min_val = df[col_label].min(skipna=True)
-
-                style[col_label] = df[col_label].apply(
-                    lambda v: "background-color:red;color:white"
-                    if pd.notna(v) and v == min_val else ""
-                )
-
-        return style
-
-    styled = display_gear_df.style.apply(
-        lambda x: highlight_gear_display(display_gear_df),
-        axis=None
-    )
-
-    st.dataframe(styled, use_container_width=True)
-
-# ================= RANKING =================
-st.subheader("🏆 Ranking")
-
-if not gear_df.empty:
-    gear_df["gear_score"] = gear_df.apply(calc_gear_score, axis=1)
-
-    col1, col2, col3 = st.columns(3)
-
-    with col1:
-        st.write("⚔️ Lực chiến")
-        st.dataframe(gear_df.sort_values("luc_chien", ascending=False)[["character","luc_chien"]])
-
-    with col2:
-        st.write("💥 DPS")
-        st.dataframe(gear_df.sort_values("dps", ascending=False)[["character","dps"]])
-
-    with col3:
-        st.write("🛡️ Gear Score")
-        st.dataframe(gear_df.sort_values("gear_score", ascending=False)[["character","gear_score"]])
