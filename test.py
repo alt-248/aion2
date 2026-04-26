@@ -265,7 +265,19 @@ st.subheader("📊 Gear Table")
 
 if not gear_df.empty:
     gear_df["gear_score"] = gear_df.apply(calc_gear_score, axis=1)
+    # ===== DATA TÍNH TOÁN (GIỮ NGUYÊN INT) =====
+    calc_df = gear_df.copy()
 
+    # ép toàn bộ về số (quan trọng)
+    for col in calc_df.columns:
+        if col != "character":
+            calc_df[col] = pd.to_numeric(calc_df[col], errors="coerce")
+
+    calc_df["gear_score"] = calc_df.apply(calc_gear_score, axis=1)
+
+    # ===== DATA HIỂN THỊ =====
+    display_df = calc_df.copy()
+    
     # ===== FIX FORMAT SỐ =====
     display_gear_df = gear_df.copy()
     for col in display_gear_df.columns:
