@@ -327,13 +327,14 @@ def highlight_gear_display(df_calc, df_display):
 
             # rule < 60%
             if total > 0 and (min_weak_count / total) < 0.6:
-
+               if pd.notna(val) and rowg.get(col_key) == min_weak:
+                    weak.append(GEAR_LABELS[col_key])
                 for idx in df_display.index:
                     val = df_calc.loc[idx, col_key]
 
                     if pd.notna(val) and val == min_weak:
-                        if rowg.get(col_key) == val:
-                           weak.append(GEAR_LABELS[col_key])
+                        #if rowg.get(col_key) == val:
+                        #   weak.append(GEAR_LABELS[col_key])
                         style.loc[idx, col_label] = "background-color:red;color:white"
         if weak:               
            st.error(f"🔻 Gear yếu: {', '.join(weak)}")
