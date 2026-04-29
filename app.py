@@ -382,7 +382,6 @@ styled = display_gear_df.style.apply(
     lambda x: highlight_gear_display(calc_df, display_gear_df),
     axis=None
 )
-st.subheader("📊 Gear Table")
 
 st.dataframe(styled, use_container_width=True)
 
