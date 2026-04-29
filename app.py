@@ -411,39 +411,45 @@ if not gear_df.empty:
             )
 
     # ===== HÀM THÊM ICON =====
-    def add_rank_icon(df):
-        df = df.reset_index(drop=True)
-        icons = ["🥇", "🥈", "🥉"]
+    def add_rank_icon(df, value_col):
+       df = df.copy()
 
-        df.insert(0, "Top", "")
+    # convert lại về số để rank (do display_df đang là string)
+       df["_val"] = df[value_col].str.replace(",", "").astype(float)
 
-        for i in range(min(3, len(df))):
-            df.loc[i, "Top"] = icons[i]
+    # dense rank (đồng hạng)
+       df["_rank"] = df["_val"].rank(method="dense", ascending=False)
 
-        return df
+    # map icon
+       icon_map = {
+           1: "🥇",
+           2: "🥈",
+           3: "🥉"
+       }
 
+       df.insert(0, "Top", df["_rank"].map(icon_map).fillna(""))
+
+    # cleanup
+       df = df.drop(columns=["_val", "_rank"])
+
+       return df
+    def get_sorted_display(calc_df, display_df, col):
+        sorted_chars = calc_df.sort_values(col, ascending=False)["character"]
+        return display_df.set_index("character").loc[sorted_chars].reset_index()
     col1, col2, col3 = st.columns(3)
 
     with col1:
         st.write("⚔️ Lực chiến")
-        df_power = display_df.sort_values("luc_chien", ascending=False)[["character","luc_chien"]]
-        st.dataframe(add_rank_icon(df_power), use_container_width=True)
+        df_power = get_sorted_display(calc_df, display_df, "luc_chien")[["character","luc_chien"]]
+        st.dataframe(add_rank_icon(df_power, "luc_chien"))
+
 
     with col2:
         st.write("💥 DPS")
-        df_dps = display_df.sort_values("dps", ascending=False)[["character","dps"]]
-        st.dataframe(add_rank_icon(df_dps), use_container_width=True)
-
+        df_dps = get_sorted_display(calc_df, display_df, "dps")[["character","dps"]]
+        st.dataframe(add_rank_icon(df_dps, "dps"))
     with col3:
-       st.write("🛡️ Gear Score")
+        st.write("🛡️ Gear Score")
 
-    # sort bằng số thật
-       sorted_calc = calc_df.sort_values("gear_score", ascending=False)
-
-    # lấy character theo thứ tự đúng
-       sorted_chars = sorted_calc["character"]
-
-    # map sang display_df
-       df_gear = display_df.set_index("character").loc[sorted_chars][["gear_score"]].reset_index()
-
-       st.dataframe(add_rank_icon(df_gear), use_container_width=True)
+        df_gear = get_sorted_display(calc_df, display_df, "gear_score")[["character","gear_score"]]
+        st.dataframe(add_rank_icon(df_gear, "gear_score"))
