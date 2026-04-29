@@ -260,7 +260,7 @@ if not gear_row.empty:
     #    st.error(f"🔻 Gear yếu: {', '.join(weak)}")
 
 # ================= GEAR TABLE =================
-st.subheader("📊 Gear Table")
+#st.subheader("📊 Gear Table")
 
 if not gear_df.empty:
 
@@ -332,7 +332,8 @@ def highlight_gear_display(df_calc, df_display):
                     val = df_calc.loc[idx, col_key]
 
                     if pd.notna(val) and val == min_weak:
-                        weak.append(GEAR_LABELS[col_key])
+                        if rowg.get(col_key) == val:
+                           weak.append(GEAR_LABELS[col_key])
                         style.loc[idx, col_label] = "background-color:red;color:white"
         if weak:               
            st.error(f"🔻 Gear yếu: {', '.join(weak)}")
@@ -342,6 +343,7 @@ styled = display_gear_df.style.apply(
     lambda x: highlight_gear_display(calc_df, display_gear_df),
     axis=None
 )
+st.subheader("📊 Gear Table")
 
 st.dataframe(styled, use_container_width=True)
 
