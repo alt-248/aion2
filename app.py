@@ -247,20 +247,18 @@ if not gear_row.empty:
     rowg = gear_row.iloc[0]
 
     missing = [GEAR_LABELS[c] for c in GEAR_COLUMNS[2:] if pd.isna(rowg.get(c)) or rowg.get(c)==0]
-    weak = []
+    #weak = []
 
-    for col in GEAR_COLUMNS[2:]:
-        min_val = gear_df[col].min(skipna=True)
-        if rowg.get(col) == min_val:
-            weak.append(GEAR_LABELS[col])
-
+    #for col in GEAR_COLUMNS[2:]:
+    #    min_val = gear_df[col].min(skipna=True)
+    #    if rowg.get(col) == min_val:
+    #        weak.append(GEAR_LABELS[col])
     if missing:
         st.warning(f"⚠️ Thiếu gear: {', '.join(missing)}")
 
-    if weak:
-        st.error(f"🔻 Gear yếu: {', '.join(weak)}")
+    #if weak:
+    #    st.error(f"🔻 Gear yếu: {', '.join(weak)}")
 
-# ================= GEAR TABLE =================
 # ================= GEAR TABLE =================
 st.subheader("📊 Gear Table")
 
@@ -321,7 +319,7 @@ def highlight_gear_display(df_calc, df_display):
         threshold = int(max_val * 0.9)
 
         weak_candidates = df_calc[col_key][df_calc[col_key] < threshold]
-
+        weak = []
         if not weak_candidates.empty:
             min_weak = weak_candidates.min()
             min_weak_count = (df_calc[col_key] == min_weak).sum()
@@ -334,8 +332,10 @@ def highlight_gear_display(df_calc, df_display):
                     val = df_calc.loc[idx, col_key]
 
                     if pd.notna(val) and val == min_weak:
+                        weak.append(GEAR_LABELS[col_key])
                         style.loc[idx, col_label] = "background-color:red;color:white"
-
+        if weak:               
+           st.error(f"🔻 Gear yếu: {', '.join(weak)}")
     return style
 
 styled = display_gear_df.style.apply(
