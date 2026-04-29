@@ -242,6 +242,12 @@ if st.button("💾 Save Gear"):
     save_gear(character_name, gear_data)
     st.rerun()
 
+# ===== PREPARE CALC DATA (dùng chung) =====
+calc_df = gear_df.copy()
+
+for col in calc_df.columns:
+    if col != "character":
+        calc_df[col] = pd.to_numeric(calc_df[col], errors="coerce")
 # ================= ALERT GEAR =================
 if not gear_row.empty:
     rowg = gear_row.iloc[0]
@@ -300,11 +306,11 @@ st.subheader("📊 Gear Table")
 if not gear_df.empty:
 
     # ===== DATA TÍNH TOÁN (GIỮ SỐ) =====
-    calc_df = gear_df.copy()
+    #calc_df = gear_df.copy()
 
-    for col in calc_df.columns:
-        if col != "character":
-            calc_df[col] = pd.to_numeric(calc_df[col], errors="coerce")
+    #for col in calc_df.columns:
+    #    if col != "character":
+    #        calc_df[col] = pd.to_numeric(calc_df[col], errors="coerce")
 
     calc_df["gear_score"] = calc_df.apply(calc_gear_score, axis=1)
 
