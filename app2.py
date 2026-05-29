@@ -2,6 +2,13 @@ import streamlit as st
 import pandas as pd
 from datetime import timezone, timedelta, datetime
 from supabase import create_client
+import streamlit as st
+
+st.set_page_config(
+    page_title="Acc2",
+    page_icon="⚔️",
+    layout="wide"
+)
 
 # ================= CONFIG =================
 MAX_ENERGY = 840
