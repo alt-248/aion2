@@ -183,7 +183,7 @@ st.session_state.df = update_energy(st.session_state.df)
 st.session_state.df = auto_system(st.session_state.df)
 
 # ================= UI =================
-st.title("⚡ Energy Tracker Acc2")
+st.title("⚡ Energy Acc2")
 # ================= ALERT UI =================
 full_e, warn_e, full_n, warn_n = check_alert(st.session_state.df)
 
