@@ -61,8 +61,8 @@ def save_row(row):
         "energy": int(row["energy"]),
         "nightmare": int(row["nightmare"]),
         "trial": int(row["trial"]),
-        "last_update": utc_time.isoformat()
-        "energy_bonus": int(row["energy_bonus"]),
+        "last_update": utc_time.isoformat(),
+        "energy_bonus": int(row["energy_bonus"])
     }).eq("id", int(row["id"])).execute()
 
 # ================= TIME =================
